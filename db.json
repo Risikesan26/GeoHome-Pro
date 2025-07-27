@@ -1,0 +1,7 @@
+{
+  "properties": [
+    { "id": 1, "name": "Sunshine Condo", "lat": 3.140, "lng": 101.686 },
+    { "id": 2, "name": "Lakeview House", "lat": 3.145, "lng": 101.690 },
+    { "id": 3, "name": "City Loft", "lat": 3.135, "lng": 101.682 }
+  ]
+}
