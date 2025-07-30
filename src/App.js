@@ -156,59 +156,51 @@ const generateMarketTrends = () => {
   }));
 };
 
-// Custom Input Component with better number formatting
+// Fixed NumberInput Component - Simplified version without cursor positioning issues
 const NumberInput = ({ value, onChange, placeholder, className }) => {
-  const [displayValue, setDisplayValue] = useState('');
-  const inputRef = useRef(null);
+  const [localValue, setLocalValue] = useState('');
   
-  // Update display value when external value changes
+  // Initialize local value when prop changes
   useEffect(() => {
     if (value === '' || value === null || value === undefined) {
-      setDisplayValue('');
+      setLocalValue('');
     } else {
-      // Only update if the numeric value is actually different
-      const numericValue = value.toString().replace(/,/g, '');
-      if (numericValue !== displayValue.replace(/,/g, '')) {
-        setDisplayValue(value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','));
+      // Only update if the value is actually different to prevent unnecessary updates
+      const formatted = Number(value).toLocaleString();
+      if (formatted !== localValue.replace(/,/g, '')) {
+        setLocalValue(formatted);
       }
     }
   }, [value]);
 
   const handleChange = (e) => {
-    const inputValue = e.target.value;
-    const cursorPosition = e.target.selectionStart;
+    const rawValue = e.target.value;
     
-    // Allow only digits and commas
-    const cleanValue = inputValue.replace(/[^\d,]/g, '');
+    // Remove all non-digit characters except for the first character if it's a decimal point
+    const numericValue = rawValue.replace(/[^\d]/g, '');
     
-    // Remove all commas and reformat
-    const numericOnly = cleanValue.replace(/,/g, '');
+    // Update local state with formatted value
+    const formatted = numericValue === '' ? '' : Number(numericValue).toLocaleString();
+    setLocalValue(formatted);
     
-    // Update display value with formatting
-    const formatted = numericOnly === '' ? '' : numericOnly.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    setDisplayValue(formatted);
-    
-    // Pass the clean numeric value to parent
-    onChange(numericOnly);
-    
-    // Restore cursor position after formatting
-    setTimeout(() => {
-      if (inputRef.current) {
-        let newPosition = cursorPosition;
-        const oldCommas = (inputValue.slice(0, cursorPosition).match(/,/g) || []).length;
-        const newCommas = (formatted.slice(0, cursorPosition).match(/,/g) || []).length;
-        newPosition += newCommas - oldCommas;
-        inputRef.current.setSelectionRange(newPosition, newPosition);
-      }
-    }, 0);
+    // Send clean numeric value to parent
+    onChange(numericValue);
+  };
+
+  const handleBlur = () => {
+    // Reformat on blur to ensure consistency
+    if (value && value !== '') {
+      const formatted = Number(value).toLocaleString();
+      setLocalValue(formatted);
+    }
   };
 
   return (
     <input
-      ref={inputRef}
       type="text"
-      value={displayValue}
+      value={localValue}
       onChange={handleChange}
+      onBlur={handleBlur}
       placeholder={placeholder}
       className={className}
       autoComplete="off"
@@ -264,11 +256,11 @@ export default function GeoHomePro() {
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [activeAnalyticsTab, setActiveAnalyticsTab] = useState('market');
   const [investmentParams, setInvestmentParams] = useState({
-    downPayment: 20,
-    loanTerm: 30,
-    interestRate: 4.5,
-    monthlyExpenses: 500,
-    expectedAppreciation: 5
+    downPayment: '20',
+    loanTerm: '30',
+    interestRate: '4.5',
+    monthlyExpenses: '500',
+    expectedAppreciation: '5'
   });
 
   const mapRef = useRef(null);
@@ -367,16 +359,16 @@ export default function GeoHomePro() {
   const calculateInvestmentMetrics = (property) => {
     const price = property.price;
     const monthlyRent = property.monthlyRent;
-    const downPaymentAmount = price * (investmentParams.downPayment / 100);
+    const downPaymentAmount = price * (Number(investmentParams.downPayment) / 100);
     const loanAmount = price - downPaymentAmount;
     
     // Monthly mortgage payment
-    const monthlyRate = investmentParams.interestRate / 100 / 12;
-    const numPayments = investmentParams.loanTerm * 12;
+    const monthlyRate = Number(investmentParams.interestRate) / 100 / 12;
+    const numPayments = Number(investmentParams.loanTerm) * 12;
     const monthlyPayment = loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / (Math.pow(1 + monthlyRate, numPayments) - 1);
     
     // Cash flow
-    const monthlyCashFlow = monthlyRent - monthlyPayment - investmentParams.monthlyExpenses;
+    const monthlyCashFlow = monthlyRent - monthlyPayment - Number(investmentParams.monthlyExpenses);
     const annualCashFlow = monthlyCashFlow * 12;
     
     // ROI calculations
@@ -385,7 +377,7 @@ export default function GeoHomePro() {
     const cashOnCashReturn = annualCashFlow / downPaymentAmount * 100;
     
     // Future value with appreciation
-    const futureValue = price * Math.pow(1 + investmentParams.expectedAppreciation / 100, 10);
+    const futureValue = price * Math.pow(1 + Number(investmentParams.expectedAppreciation) / 100, 10);
     const totalReturn = (futureValue - price + annualCashFlow * 10) / downPaymentAmount * 100;
 
     return {
@@ -751,7 +743,7 @@ export default function GeoHomePro() {
                       <input
                         type="number"
                         value={investmentParams.downPayment}
-                        onChange={e => setInvestmentParams(prev => ({...prev, downPayment: parseFloat(e.target.value) || 0}))}
+                        onChange={e => setInvestmentParams(prev => ({...prev, downPayment: e.target.value}))}
                         className="param-input"
                       />
                     </div>
@@ -760,7 +752,7 @@ export default function GeoHomePro() {
                       <input
                         type="number"
                         value={investmentParams.loanTerm}
-                        onChange={e => setInvestmentParams(prev => ({...prev, loanTerm: parseFloat(e.target.value) || 0}))}
+                        onChange={e => setInvestmentParams(prev => ({...prev, loanTerm: e.target.value}))}
                         className="param-input"
                       />
                     </div>
@@ -770,7 +762,7 @@ export default function GeoHomePro() {
                         type="number"
                         step="0.1"
                         value={investmentParams.interestRate}
-                        onChange={e => setInvestmentParams(prev => ({...prev, interestRate: parseFloat(e.target.value) || 0}))}
+                        onChange={e => setInvestmentParams(prev => ({...prev, interestRate: e.target.value}))}
                         className="param-input"
                       />
                     </div>
@@ -779,7 +771,7 @@ export default function GeoHomePro() {
                       <input
                         type="number"
                         value={investmentParams.monthlyExpenses}
-                        onChange={e => setInvestmentParams(prev => ({...prev, monthlyExpenses: parseFloat(e.target.value) || 0}))}
+                        onChange={e => setInvestmentParams(prev => ({...prev, monthlyExpenses: e.target.value}))}
                         className="param-input"
                       />
                     </div>
@@ -789,7 +781,7 @@ export default function GeoHomePro() {
                         type="number"
                         step="0.1"
                         value={investmentParams.expectedAppreciation}
-                        onChange={e => setInvestmentParams(prev => ({...prev, expectedAppreciation: parseFloat(e.target.value) || 0}))}
+                        onChange={e => setInvestmentParams(prev => ({...prev, expectedAppreciation: e.target.value}))}
                         className="param-input"
                       />
                     </div>
