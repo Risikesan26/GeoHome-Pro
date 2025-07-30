@@ -1,7 +1,8 @@
 # 🏠 GeoHome Pro
+[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-Visit_Site-blue?style=for-the-badge)](https://geohome-xidn7shbk-risikesans-projects.vercel.app/)
 
 **Enhanced Real Estate & Market Analysis Platform**
-[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-Visit_Site-blue?style=for-the-badge)](https://geohome-xidn7shbk-risikesans-projects.vercel.app/)
+
 GeoHome Pro is a comprehensive real estate analysis tool that combines property search, market analytics, investment calculations, and neighborhood insights into one powerful platform. Built with React and Google Maps API, it provides users with data-driven insights for property investment decisions.
 
 > **⚠️ Important Notice**: All property data, prices, market trends, and analytics shown in this application are **mock data for demonstration purposes only**. This is a proof-of-concept application designed to showcase real estate analysis features. Do not use this data for actual investment decisions. For real estate investments, always consult with licensed professionals and use verified market data.
