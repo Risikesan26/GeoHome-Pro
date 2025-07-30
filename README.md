@@ -6,8 +6,6 @@ GeoHome Pro is a comprehensive real estate analysis tool that combines property 
 
 > **⚠️ Important Notice**: All property data, prices, market trends, and analytics shown in this application are **mock data for demonstration purposes only**. This is a proof-of-concept application designed to showcase real estate analysis features. Do not use this data for actual investment decisions. For real estate investments, always consult with licensed professionals and use verified market data.
 
-![GeoHome Pro Screenshot](https://via.placeholder.com/800x400/1f2328/ffffff?text=GeoHome+Pro+Dashboard)
-
 ## ✨ Features
 
 ### 🔍 **Smart Property Search**
