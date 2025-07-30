@@ -1,7 +1,7 @@
 # 🏠 GeoHome Pro
 
 **Enhanced Real Estate & Market Analysis Platform**
-
+[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-Visit_Site-blue?style=for-the-badge)](https://geohome-xidn7shbk-risikesans-projects.vercel.app/)
 GeoHome Pro is a comprehensive real estate analysis tool that combines property search, market analytics, investment calculations, and neighborhood insights into one powerful platform. Built with React and Google Maps API, it provides users with data-driven insights for property investment decisions.
 
 > **⚠️ Important Notice**: All property data, prices, market trends, and analytics shown in this application are **mock data for demonstration purposes only**. This is a proof-of-concept application designed to showcase real estate analysis features. Do not use this data for actual investment decisions. For real estate investments, always consult with licensed professionals and use verified market data.
@@ -172,6 +172,46 @@ To use this application with real data, you would need to:
 - Implement verified property valuation services
 - Add proper data validation and verification systems
 
+### Malaysian Real Estate Data Providers
+For production implementation, consider integrating with these verified Malaysian property data sources:
+
+**Property Listing Platforms:**
+- [PropertyGuru Malaysia API](https://www.propertyguru.com.my) - Comprehensive property listings
+- [iProperty.com.my API](https://www.iproperty.com.my) - Extensive Malaysian property database
+- [EdgeProp.my](https://www.edgeprop.my) - Professional property analytics and listings
+- [Mudah.my Property API](https://www.mudah.my) - Popular classified ads platform
+- [PropertyAdvisor](https://www.propertyadvisor.my) - Property investment analytics
+
+**Official Government Sources:**
+- [NAPIC (National Property Information Centre)](https://napic.jpph.gov.my) - Official property statistics
+- [Bank Negara Malaysia](https://www.bnm.gov.my) - Housing loan and mortgage data
+- [JPPH (Department of Valuation and Property Services)](https://www.jpph.gov.my) - Property valuation standards
+- [REHDA (Real Estate and Housing Developers' Association)](https://www.rehda.com) - Industry data and reports
+
+**Market Analytics Providers:**
+- [JLL Malaysia](https://www.jll.com.my) - Commercial real estate data
+- [Knight Frank Malaysia](https://www.knightfrank.com.my) - Property market research
+- [CBRE Malaysia](https://www.cbre.com.my) - Real estate services and data
+
+### Malaysian Property Data Regulations
+
+**Key Compliance Requirements:**
+- **Personal Data Protection Act 2010 (PDPA)** - Governs collection and use of personal property data
+- **Real Estate and Housing Developers Act 1966** - Regulates property development and sales
+- **Valuers, Appraisers and Estate Agents Act 1981** - Professional standards for property valuation
+- **Central Bank of Malaysia Guidelines** - Housing loan and mortgage regulations
+
+**Data Privacy Considerations:**
+- Property owner information must be anonymized
+- Transaction data requires proper consent mechanisms  
+- Cross-border data transfer restrictions apply
+- Regular compliance audits required for commercial use
+
+**Professional Licensing:**
+- Real estate advice requires proper licensing under BOVAEP
+- Property valuation must comply with Malaysian Valuation Standards
+- Investment recommendations need appropriate financial advisory licenses
+
 ## 📊 Analytics Features
 
 ### Market Analytics
@@ -313,5 +353,3 @@ If you have any questions or need help, please:
 **⭐ If you found this project helpful, please give it a star on GitHub!**
 
 ---
-
-*Made with ❤️ for the real estate community*
