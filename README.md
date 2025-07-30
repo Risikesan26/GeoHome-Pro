@@ -258,9 +258,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 👨‍💻 Author
 
 **Risikesan Yogeswaran**
-- Website: [yourwebsite.com]([https://yourwebsite.com](https://risikesan26.github.io/Risikesan-s-Portfolio/)
-- LinkedIn:www.linkedin.com/in/risikesan26
-- Email: yrisikesan26@gmail.com
+- Website: (https://risikesan26.github.io/Risikesan-s-Portfolio/)
+- LinkedIn: (www.linkedin.com/in/risikesan26)
+- Email: (yrisikesan26@gmail.com)
 
 ## 🙏 Acknowledgments
 
