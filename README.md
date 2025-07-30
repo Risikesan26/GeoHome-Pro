@@ -4,6 +4,10 @@
 
 GeoHome Pro is a comprehensive real estate analysis tool that combines property search, market analytics, investment calculations, and neighborhood insights into one powerful platform. Built with React and Google Maps API, it provides users with data-driven insights for property investment decisions.
 
+> **⚠️ Important Notice**: All property data, prices, market trends, and analytics shown in this application are **mock data for demonstration purposes only**. This is a proof-of-concept application designed to showcase real estate analysis features. Do not use this data for actual investment decisions. For real estate investments, always consult with licensed professionals and use verified market data.
+
+![GeoHome Pro Screenshot](https://via.placeholder.com/800x400/1f2328/ffffff?text=GeoHome+Pro+Dashboard)
+
 ## ✨ Features
 
 ### 🔍 **Smart Property Search**
@@ -117,7 +121,7 @@ geohome-pro/
 │   ├── components/
 │   │   └── GeoHomePro.js      # Main component
 │   ├── utils/
-│   │   ├── Data.js        # Property data 
+│   │   ├── mockData.js        # Mock property data generators
 │   │   └── calculations.js    # Investment calculation utilities
 │   ├── styles/
 │   │   └── globals.css        # Global styles
@@ -144,6 +148,31 @@ geohome-pro/
 - **CSS-in-JS** - Component-level styling
 - **CSS Grid & Flexbox** - Modern layout techniques
 - **Dark Theme** - Professional dark UI design
+
+## 📊 Data & Disclaimer
+
+### Mock Data Sources
+This application currently uses **algorithmically generated mock data** to demonstrate functionality:
+
+- **Property Listings**: Randomly generated properties with realistic Malaysian market characteristics
+- **Market Trends**: Simulated price movements and market analytics
+- **Investment Metrics**: Calculated using mock rental yields and appreciation rates
+- **Neighborhood Scores**: Simulated safety, school, and amenity ratings
+- **Nearby Places**: Real data from Google Places API
+
+### Data Accuracy Notice
+> **🚨 Critical Disclaimer**: All property prices, market analytics, investment calculations, and recommendations are based on simulated data and should **NOT** be used for actual real estate investment decisions. This application is designed for:
+> - **Portfolio demonstration**
+> - **Feature showcase**
+> - **Technical proof-of-concept**
+> - **Educational purposes**
+
+### For Production Use
+To use this application with real data, you would need to:
+- Integrate with actual property listing APIs (e.g., PropertyGuru, iProperty, EdgeProp)
+- Connect to real market data providers
+- Implement verified property valuation services
+- Add proper data validation and verification systems
 
 ## 📊 Analytics Features
 
@@ -219,14 +248,17 @@ This project follows:
 ## 🔮 Future Enhancements
 
 ### Planned Features
-- [ ] **Real Property Data Integration** - Connect to actual MLS/property APIs
+- [ ] **Real Property Data Integration** - Connect to actual MLS/property APIs (PropertyGuru, iProperty, EdgeProp)
+- [ ] **Verified Market Data** - Integration with official property transaction records
+- [ ] **Real-time Pricing** - Live market data feeds and price updates
 - [ ] **User Authentication** - Save preferences and properties to user accounts
 - [ ] **Market Alerts** - Email notifications for price changes and new listings
 - [ ] **3D Property Views** - Virtual property tours
-- [ ] **Mortgage Calculator** - Detailed loan calculations
-- [ ] **Comparative Market Analysis** - Advanced property comparisons
+- [ ] **Mortgage Calculator** - Detailed loan calculations with real bank rates
+- [ ] **Comparative Market Analysis** - Advanced property comparisons with verified data
 - [ ] **Export Reports** - PDF generation for property and market reports
 - [ ] **Mobile App** - React Native mobile application
+- [ ] **Professional Dashboard** - Tools for real estate agents and analysts
 
 ### Technical Improvements
 - [ ] **TypeScript Migration** - Add type safety
@@ -257,10 +289,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👨‍💻 Author
 
-**Risikesan Yogeswaran**
+**Your Name**
 - Website: (https://risikesan26.github.io/Risikesan-s-Portfolio/)
 - LinkedIn: (www.linkedin.com/in/risikesan26)
-- Email: (yrisikesan26@gmail.com)
+- Email: your.email@example.com
 
 ## 🙏 Acknowledgments
 
