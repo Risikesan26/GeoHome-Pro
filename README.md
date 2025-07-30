@@ -287,10 +287,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👨‍💻 Author
 
-**Your Name**
+**Risikesan Yogeswaran**
 - Website: (https://risikesan26.github.io/Risikesan-s-Portfolio/)
 - LinkedIn: (www.linkedin.com/in/risikesan26)
-- Email: your.email@example.com
+- Email: (yrisikesan26@gmail.com)
 
 ## 🙏 Acknowledgments
 
