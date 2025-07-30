@@ -117,7 +117,7 @@ geohome-pro/
 │   ├── components/
 │   │   └── GeoHomePro.js      # Main component
 │   ├── utils/
-│   │   ├── mockData.js        # Mock property data generators
+│   │   ├── Data.js        # Property data 
 │   │   └── calculations.js    # Investment calculation utilities
 │   ├── styles/
 │   │   └── globals.css        # Global styles
