@@ -38,6 +38,83 @@ const mapStyle = [
   { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] },
 ];
 
+// Enhanced NumberInput Component
+const NumberInput = ({ value, onChange, placeholder, className }) => {
+  const [displayValue, setDisplayValue] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const inputRef = useRef(null);
+  
+  // Update display value when external value changes (only when not focused)
+  useEffect(() => {
+    if (!isFocused) {
+      if (value === '' || value === null || value === undefined) {
+        setDisplayValue('');
+      } else {
+        const formatted = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        setDisplayValue(formatted);
+      }
+    }
+  }, [value, isFocused]);
+
+  const handleChange = (e) => {
+    const inputValue = e.target.value;
+    const cursorPosition = e.target.selectionStart;
+    
+    // Allow only digits and commas
+    const cleanValue = inputValue.replace(/[^\d,]/g, '');
+    
+    // Remove all commas and reformat
+    const numericOnly = cleanValue.replace(/,/g, '');
+    
+    // Update display value with formatting
+    const formatted = numericOnly === '' ? '' : numericOnly.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    setDisplayValue(formatted);
+    
+    // Pass the clean numeric value to parent
+    onChange(numericOnly);
+    
+    // Restore cursor position after formatting
+    requestAnimationFrame(() => {
+      if (inputRef.current && document.activeElement === inputRef.current) {
+        // Calculate new cursor position based on comma changes
+        const commasBeforeCursor = (inputValue.slice(0, cursorPosition).match(/,/g) || []).length;
+        const commasInFormatted = (formatted.slice(0, cursorPosition).match(/,/g) || []).length;
+        const adjustment = commasInFormatted - commasBeforeCursor;
+        const newPosition = Math.min(cursorPosition + adjustment, formatted.length);
+        
+        inputRef.current.setSelectionRange(newPosition, newPosition);
+      }
+    });
+  };
+
+  const handleFocus = () => {
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    // Reformat on blur to ensure consistency
+    if (value) {
+      const formatted = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      setDisplayValue(formatted);
+    }
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={displayValue}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      placeholder={placeholder}
+      className={className}
+      autoComplete="off"
+    />
+  );
+};
+
 // Enhanced mock data generation
 const generateMockProperties = (searchLocation) => {
   const propertyTypes = ['Condo', 'Landed House', 'Apartment', 'Townhouse', 'Villa'];
@@ -156,66 +233,6 @@ const generateMarketTrends = () => {
   }));
 };
 
-// Custom Input Component with better number formatting
-const NumberInput = ({ value, onChange, placeholder, className }) => {
-  const [displayValue, setDisplayValue] = useState('');
-  const inputRef = useRef(null);
-  
-  // Update display value when external value changes
-  useEffect(() => {
-    if (value === '' || value === null || value === undefined) {
-      setDisplayValue('');
-    } else {
-      // Only update if the numeric value is actually different
-      const numericValue = value.toString().replace(/,/g, '');
-      if (numericValue !== displayValue.replace(/,/g, '')) {
-        setDisplayValue(value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','));
-      }
-    }
-  }, [value]);
-
-  const handleChange = (e) => {
-    const inputValue = e.target.value;
-    const cursorPosition = e.target.selectionStart;
-    
-    // Allow only digits and commas
-    const cleanValue = inputValue.replace(/[^\d,]/g, '');
-    
-    // Remove all commas and reformat
-    const numericOnly = cleanValue.replace(/,/g, '');
-    
-    // Update display value with formatting
-    const formatted = numericOnly === '' ? '' : numericOnly.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    setDisplayValue(formatted);
-    
-    // Pass the clean numeric value to parent
-    onChange(numericOnly);
-    
-    // Restore cursor position after formatting
-    setTimeout(() => {
-      if (inputRef.current) {
-        let newPosition = cursorPosition;
-        const oldCommas = (inputValue.slice(0, cursorPosition).match(/,/g) || []).length;
-        const newCommas = (formatted.slice(0, cursorPosition).match(/,/g) || []).length;
-        newPosition += newCommas - oldCommas;
-        inputRef.current.setSelectionRange(newPosition, newPosition);
-      }
-    }, 0);
-  };
-
-  return (
-    <input
-      ref={inputRef}
-      type="text"
-      value={displayValue}
-      onChange={handleChange}
-      placeholder={placeholder}
-      className={className}
-      autoComplete="off"
-    />
-  );
-};
-
 export default function GeoHomePro() {
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY || 'demo-key',
@@ -253,7 +270,7 @@ export default function GeoHomePro() {
     minWalkScore: 60
   });
 
-  // New state for enhanced features (removed savedSearches)
+  // New state for enhanced features
   const [showMarketTrends, setShowMarketTrends] = useState(false);
   const [marketTrends] = useState(generateMarketTrends());
 
