@@ -156,23 +156,22 @@ const generateMarketTrends = () => {
   }));
 };
 
-// Custom Input Component with better number formatting
 const NumberInput = ({ value, onChange, placeholder, className }) => {
   const [displayValue, setDisplayValue] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef(null);
   
-  // Update display value when external value changes
+  // Update display value when external value changes (only when not focused)
   useEffect(() => {
-    if (value === '' || value === null || value === undefined) {
-      setDisplayValue('');
-    } else {
-      // Only update if the numeric value is actually different
-      const numericValue = value.toString().replace(/,/g, '');
-      if (numericValue !== displayValue.replace(/,/g, '')) {
-        setDisplayValue(value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','));
+    if (!isFocused) {
+      if (value === '' || value === null || value === undefined) {
+        setDisplayValue('');
+      } else {
+        const formatted = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        setDisplayValue(formatted);
       }
     }
-  }, [value]);
+  }, [value, isFocused]);
 
   const handleChange = (e) => {
     const inputValue = e.target.value;
@@ -192,15 +191,30 @@ const NumberInput = ({ value, onChange, placeholder, className }) => {
     onChange(numericOnly);
     
     // Restore cursor position after formatting
-    setTimeout(() => {
-      if (inputRef.current) {
-        let newPosition = cursorPosition;
-        const oldCommas = (inputValue.slice(0, cursorPosition).match(/,/g) || []).length;
-        const newCommas = (formatted.slice(0, cursorPosition).match(/,/g) || []).length;
-        newPosition += newCommas - oldCommas;
+    requestAnimationFrame(() => {
+      if (inputRef.current && document.activeElement === inputRef.current) {
+        // Calculate new cursor position based on comma changes
+        const commasBeforeCursor = (inputValue.slice(0, cursorPosition).match(/,/g) || []).length;
+        const commasInFormatted = (formatted.slice(0, cursorPosition).match(/,/g) || []).length;
+        const adjustment = commasInFormatted - commasBeforeCursor;
+        const newPosition = Math.min(cursorPosition + adjustment, formatted.length);
+        
         inputRef.current.setSelectionRange(newPosition, newPosition);
       }
-    }, 0);
+    });
+  };
+
+  const handleFocus = () => {
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    // Reformat on blur to ensure consistency
+    if (value) {
+      const formatted = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      setDisplayValue(formatted);
+    }
   };
 
   return (
@@ -209,6 +223,8 @@ const NumberInput = ({ value, onChange, placeholder, className }) => {
       type="text"
       value={displayValue}
       onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
       placeholder={placeholder}
       className={className}
       autoComplete="off"
