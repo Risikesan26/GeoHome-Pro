@@ -1,1579 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import {
-  GoogleMap,
-  useLoadScript,
-  Marker,
-  InfoWindow,
-  Autocomplete,
-  DirectionsRenderer,
-  HeatmapLayer,
-  DrawingManager,
-  Polygon,
-} from '@react-google-maps/api';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Area, AreaChart } from 'recharts';
-
-const libraries = ['places', 'drawing', 'visualization'];
-const mapContainerStyle = { width: '100%', height: '100vh' };
-const defaultCenter = { lat: 3.139, lng: 101.6869 }; // Kuala Lumpur
-
-// Enhanced map style
-const mapStyle = [
-  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
-  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
-  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
-  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
-  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] },
-  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] },
-  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] },
-  { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2f3948" }] },
-  { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
-  { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
-  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
-  { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] },
-];
-
-// Enhanced NumberInput Component
-const NumberInput = ({ value, onChange, placeholder, className }) => {
-  const [displayValue, setDisplayValue] = useState('');
-  const [isFocused, setIsFocused] = useState(false);
-  const inputRef = useRef(null);
-  
-  // Update display value when external value changes (only when not focused)
-  useEffect(() => {
-    if (!isFocused) {
-      if (value === '' || value === null || value === undefined) {
-        setDisplayValue('');
-      } else {
-        const formatted = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        setDisplayValue(formatted);
-      }
-    }
-  }, [value, isFocused]);
-
-  const handleChange = (e) => {
-    const inputValue = e.target.value;
-    const cursorPosition = e.target.selectionStart;
-    
-    // Allow only digits and commas
-    const cleanValue = inputValue.replace(/[^\d,]/g, '');
-    
-    // Remove all commas and reformat
-    const numericOnly = cleanValue.replace(/,/g, '');
-    
-    // Update display value with formatting
-    const formatted = numericOnly === '' ? '' : numericOnly.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    setDisplayValue(formatted);
-    
-    // Pass the clean numeric value to parent
-    onChange(numericOnly);
-    
-    // Restore cursor position after formatting
-    requestAnimationFrame(() => {
-      if (inputRef.current && document.activeElement === inputRef.current) {
-        // Calculate new cursor position based on comma changes
-        const commasBeforeCursor = (inputValue.slice(0, cursorPosition).match(/,/g) || []).length;
-        const commasInFormatted = (formatted.slice(0, cursorPosition).match(/,/g) || []).length;
-        const adjustment = commasInFormatted - commasBeforeCursor;
-        const newPosition = Math.min(cursorPosition + adjustment, formatted.length);
-        
-        inputRef.current.setSelectionRange(newPosition, newPosition);
-      }
-    });
-  };
-
-  const handleFocus = () => {
-    setIsFocused(true);
-  };
-
-  const handleBlur = () => {
-    setIsFocused(false);
-    // Reformat on blur to ensure consistency
-    if (value) {
-      const formatted = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-      setDisplayValue(formatted);
-    }
-  };
-
-  return (
-    <input
-      ref={inputRef}
-      type="text"
-      value={displayValue}
-      onChange={handleChange}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-      placeholder={placeholder}
-      className={className}
-      autoComplete="off"
-    />
-  );
-};
-
-// Enhanced mock data generation
-const generateMockProperties = (searchLocation) => {
-  const propertyTypes = ['Condo', 'Landed House', 'Apartment', 'Townhouse', 'Villa'];
-  const schoolDistricts = ['Mont Kiara', 'KLCC', 'Bangsar', 'Sri Hartamas', 'Damansara'];
-  const features = ['pool', 'gym', 'parking', 'security', 'playground', 'garden'];
-  
-  // Generate properties around the searched location
-  const baseLatLng = searchLocation || defaultCenter;
-  
-  return Array.from({ length: 50 }, (_, i) => {
-    const price = Math.floor(Math.random() * 2000000) + 300000;
-    const size = Math.floor(Math.random() * 2000) + 800;
-    const monthlyRent = Math.floor(price * 0.003 + Math.random() * 1000); // Realistic rent calculation
-    const yearBuilt = Math.floor(Math.random() * 30) + 1994;
-    const district = schoolDistricts[Math.floor(Math.random() * schoolDistricts.length)];
-    
-    return {
-      id: i + 1,
-      title: `Property ${i + 1}`,
-      lat: baseLatLng.lat + (Math.random() - 0.5) * 0.1,
-      lng: baseLatLng.lng + (Math.random() - 0.5) * 0.1,
-      price,
-      size,
-      lotSize: Math.floor(Math.random() * 5000) + 1000,
-      yearBuilt,
-      propertyType: propertyTypes[Math.floor(Math.random() * propertyTypes.length)],
-      schoolDistrict: district,
-      features: features.slice(0, Math.floor(Math.random() * 4) + 2),
-      walkScore: Math.floor(Math.random() * 40) + 60,
-      priceHistory: generatePriceHistory(price),
-      monthlyRent,
-      description: `Beautiful property in ${district} area.`,
-      imageUrl: `https://picsum.photos/300/200?random=${i}`,
-      // Analytics data
-      daysOnMarket: Math.floor(Math.random() * 180) + 10,
-      pricePerSqft: Math.floor(price / size),
-      appreciation: (Math.random() - 0.3) * 20, // -6% to +14% appreciation
-      crimeScore: Math.floor(Math.random() * 40) + 30, // 30-70 (lower is better)
-      schoolRating: Math.floor(Math.random() * 3) + 7, // 7-10 rating
-      commuteScore: Math.floor(Math.random() * 40) + 60, // 60-100
-      investmentGrade: ['A+', 'A', 'A-', 'B+', 'B', 'B-'][Math.floor(Math.random() * 6)]
-    };
-  });
-};
-
-const generatePriceHistory = (currentPrice) => {
-  const history = [];
-  let price = currentPrice * 0.8; // Start from 80% of current price
-  for (let i = 0; i < 24; i++) {
-    const month = new Date();
-    month.setMonth(month.getMonth() - (23 - i));
-    const variation = (Math.random() - 0.4) * 0.05; // Slight upward bias
-    price = Math.floor(price * (1 + variation));
-    history.push({
-      date: month.toISOString().slice(0, 7),
-      price: price,
-      month: month.toLocaleDateString('en-MY', { month: 'short', year: '2-digit' })
-    });
-  }
-  return history;
-};
-
-// Generate market analytics data
-const generateMarketAnalytics = () => {
-  const months = [];
-  const currentDate = new Date();
-  for (let i = 11; i >= 0; i--) {
-    const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-    months.push({
-      month: date.toLocaleDateString('en-MY', { month: 'short', year: '2-digit' }),
-      averagePrice: Math.floor(Math.random() * 200000) + 800000,
-      inventory: Math.floor(Math.random() * 500) + 200,
-      salesVolume: Math.floor(Math.random() * 150) + 50,
-      daysOnMarket: Math.floor(Math.random() * 30) + 45
-    });
-  }
-  return months;
-};
-
-const generateNeighborhoodData = () => {
-  const districts = ['Mont Kiara', 'KLCC', 'Bangsar', 'Sri Hartamas', 'Damansara'];
-  return districts.map(district => ({
-    name: district,
-    safetyScore: Math.floor(Math.random() * 30) + 70,
-    schoolScore: Math.floor(Math.random() * 30) + 70,
-    transportScore: Math.floor(Math.random() * 30) + 60,
-    amenitiesScore: Math.floor(Math.random() * 30) + 65,
-    overallScore: Math.floor(Math.random() * 20) + 75,
-    averagePrice: Math.floor(Math.random() * 500000) + 600000,
-    priceGrowth: (Math.random() * 15) + 2
-  }));
-};
-
-const marketData = generateMarketAnalytics();
-const neighborhoodData = generateNeighborhoodData();
-
-// Enhanced market trends data
-const generateMarketTrends = () => {
-  const areas = [
-    { name: 'Mont Kiara', center: { lat: 3.1724, lng: 101.6508 }, appreciation: 8.5 },
-    { name: 'KLCC', center: { lat: 3.1578, lng: 101.7123 }, appreciation: 12.3 },
-    { name: 'Bangsar', center: { lat: 3.1319, lng: 101.6740 }, appreciation: 6.7 },
-    { name: 'Sri Hartamas', center: { lat: 3.1685, lng: 101.6478 }, appreciation: 4.2 },
-    { name: 'Damansara', center: { lat: 3.1478, lng: 101.6388 }, appreciation: 7.9 }
-  ];
-  
-  return areas.map(area => ({
-    ...area,
-    bounds: [
-      { lat: area.center.lat + 0.02, lng: area.center.lng - 0.02 },
-      { lat: area.center.lat + 0.02, lng: area.center.lng + 0.02 },
-      { lat: area.center.lat - 0.02, lng: area.center.lng + 0.02 },
-      { lat: area.center.lat - 0.02, lng: area.center.lng - 0.02 }
-    ],
-    color: area.appreciation > 10 ? '#4CAF50' : area.appreciation > 5 ? '#FF9800' : '#F44336'
-  }));
-};
-
-export default function GeoHomePro() {
-  const { isLoaded, loadError } = useLoadScript({
-    googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY || 'demo-key',
-    libraries,
-  });
-
-  // Enhanced state management
-  const [mapCenter, setMapCenter] = useState(defaultCenter);
-  const [zoom, setZoom] = useState(12);
-  const [markerPosition, setMarkerPosition] = useState(defaultCenter);
-  const [searchLocation, setSearchLocation] = useState(null); // NEW: Track if location has been searched
-  const [searchedLocationName, setSearchedLocationName] = useState(''); // NEW: Store location name
-  const [allProperties, setAllProperties] = useState([]); // NEW: Start with empty array
-  const [directions, setDirections] = useState(null);
-  const [travelMode, setTravelMode] = useState('DRIVING');
-  const [distanceInfo, setDistanceInfo] = useState('');
-  const [nearbyPlaces, setNearbyPlaces] = useState([]);
-  const [placeType, setPlaceType] = useState('school');
-  const [heatmapData, setHeatmapData] = useState([]);
-  const [selectedProperty, setSelectedProperty] = useState(null);
-
-  // Enhanced property filters - Store as strings to avoid formatting issues
-  const [propertyFilters, setPropertyFilters] = useState({
-    minPrice: '',
-    maxPrice: '',
-    minSize: '',
-    maxSize: '',
-    minLotSize: '',
-    maxLotSize: '',
-    minYearBuilt: '',
-    maxYearBuilt: '',
-    propertyType: '',
-    schoolDistrict: '',
-    features: [],
-    minWalkScore: 60
-  });
-
-  // New state for enhanced features
-  const [showMarketTrends, setShowMarketTrends] = useState(false);
-  const [marketTrends] = useState(generateMarketTrends());
-
-  // New state for saved properties
-  const [savedProperties, setSavedProperties] = useState([]);
-
-  // Analytics Dashboard State
-  const [showAnalytics, setShowAnalytics] = useState(false);
-  const [activeAnalyticsTab, setActiveAnalyticsTab] = useState('market');
-  const [investmentParams, setInvestmentParams] = useState({
-    downPayment: 20,
-    loanTerm: 30,
-    interestRate: 4.5,
-    monthlyExpenses: 500,
-    expectedAppreciation: 5
-  });
-
-  const mapRef = useRef(null);
-  const autocompleteRef = useRef(null);
-
-  // Simplified input change handlers
-  const handleFilterChange = (field, value) => {
-    setPropertyFilters(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  const handleYearChange = (field, value) => {
-    // Allow only digits and limit to 4 characters for year fields
-    const numericValue = value.replace(/\D/g, '').slice(0, 4);
-    setPropertyFilters(prev => ({
-      ...prev,
-      [field]: numericValue
-    }));
-  };
-
-  // Enhanced filtering logic - only filter if properties exist
-  const filteredProperties = useMemo(() => {
-    if (!searchLocation || allProperties.length === 0) {
-      return [];
-    }
-    
-    return allProperties.filter(property => {
-      const minPrice = Number(propertyFilters.minPrice) || 0;
-      const maxPrice = Number(propertyFilters.maxPrice) || Infinity;
-      const minSize = Number(propertyFilters.minSize) || 0;
-      const maxSize = Number(propertyFilters.maxSize) || Infinity;
-      const minLotSize = Number(propertyFilters.minLotSize) || 0;
-      const maxLotSize = Number(propertyFilters.maxLotSize) || Infinity;
-      const minYearBuilt = Number(propertyFilters.minYearBuilt) || 1900;
-      const maxYearBuilt = Number(propertyFilters.maxYearBuilt) || new Date().getFullYear();
-
-      const priceMatch = property.price >= minPrice && property.price <= maxPrice;
-      const sizeMatch = property.size >= minSize && property.size <= maxSize;
-      const lotSizeMatch = property.lotSize >= minLotSize && property.lotSize <= maxLotSize;
-      const yearMatch = property.yearBuilt >= minYearBuilt && property.yearBuilt <= maxYearBuilt;
-      const typeMatch = !propertyFilters.propertyType || property.propertyType === propertyFilters.propertyType;
-      const districtMatch = !propertyFilters.schoolDistrict || property.schoolDistrict === propertyFilters.schoolDistrict;
-      const walkScoreMatch = property.walkScore >= propertyFilters.minWalkScore;
-      const featureMatch = propertyFilters.features.every(f => property.features?.includes(f));
-
-      return priceMatch && sizeMatch && lotSizeMatch && yearMatch && typeMatch && districtMatch && walkScoreMatch && featureMatch;
-    });
-  }, [allProperties, propertyFilters, searchLocation]);
-
-  // Property recommendation engine - only work if properties exist
-  const getPropertyRecommendations = useMemo(() => {
-    if (!searchLocation || filteredProperties.length === 0) {
-      return [];
-    }
-    
-    const userPreferences = {
-      avgPrice: filteredProperties.reduce((sum, p) => sum + p.price, 0) / filteredProperties.length || 1000000,
-      preferredDistricts: propertyFilters.schoolDistrict ? [propertyFilters.schoolDistrict] : [],
-      preferredFeatures: propertyFilters.features,
-      minWalkScore: propertyFilters.minWalkScore
-    };
-
-    return allProperties
-      .map(property => {
-        let score = 0;
-        
-        // Price similarity (closer to user's average preference)
-        const priceDiff = Math.abs(property.price - userPreferences.avgPrice) / userPreferences.avgPrice;
-        score += (1 - Math.min(priceDiff, 1)) * 30;
-        
-        // District preference
-        if (userPreferences.preferredDistricts.includes(property.schoolDistrict)) {
-          score += 25;
-        }
-        
-        // Feature matching
-        const matchingFeatures = property.features?.filter(f => userPreferences.preferredFeatures.includes(f)).length || 0;
-        score += (matchingFeatures / Math.max(userPreferences.preferredFeatures.length, 1)) * 20;
-        
-        // Walk score
-        score += (property.walkScore / 100) * 15;
-        
-        // Investment metrics
-        const grossYield = (property.monthlyRent * 12) / property.price * 100;
-        score += Math.min(grossYield * 2, 10); // Max 10 points for yield
-        
-        return { ...property, recommendationScore: Math.round(score) };
-      })
-      .sort((a, b) => b.recommendationScore - a.recommendationScore)
-      .slice(0, 5);
-  }, [allProperties, filteredProperties, propertyFilters, searchLocation]);
-
-  // Investment calculator
-  const calculateInvestmentMetrics = (property) => {
-    const price = property.price;
-    const monthlyRent = property.monthlyRent;
-    const downPaymentAmount = price * (investmentParams.downPayment / 100);
-    const loanAmount = price - downPaymentAmount;
-    
-    // Monthly mortgage payment
-    const monthlyRate = investmentParams.interestRate / 100 / 12;
-    const numPayments = investmentParams.loanTerm * 12;
-    const monthlyPayment = loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / (Math.pow(1 + monthlyRate, numPayments) - 1);
-    
-    // Cash flow
-    const monthlyCashFlow = monthlyRent - monthlyPayment - investmentParams.monthlyExpenses;
-    const annualCashFlow = monthlyCashFlow * 12;
-    
-    // ROI calculations
-    const grossYield = (monthlyRent * 12) / price * 100;
-    const netYield = annualCashFlow / price * 100;
-    const cashOnCashReturn = annualCashFlow / downPaymentAmount * 100;
-    
-    // Future value with appreciation
-    const futureValue = price * Math.pow(1 + investmentParams.expectedAppreciation / 100, 10);
-    const totalReturn = (futureValue - price + annualCashFlow * 10) / downPaymentAmount * 100;
-
-    return {
-      downPaymentAmount,
-      monthlyPayment,
-      monthlyCashFlow,
-      annualCashFlow,
-      grossYield,
-      netYield,
-      cashOnCashReturn,
-      futureValue,
-      totalReturn
-    };
-  };
-
-  // Calculate neighborhood score
-  const calculateNeighborhoodScore = (property) => {
-    const district = neighborhoodData.find(d => d.name === property.schoolDistrict);
-    if (!district) return 0;
-    
-    const weights = {
-      safety: 0.3,
-      schools: 0.25,
-      transport: 0.2,
-      amenities: 0.15,
-      walkability: 0.1
-    };
-    
-    const score = 
-      district.safetyScore * weights.safety +
-      district.schoolScore * weights.schools +
-      district.transportScore * weights.transport +
-      district.amenitiesScore * weights.amenities +
-      property.walkScore * weights.walkability;
-    
-    return Math.round(score);
-  };
-
-  // Fetch nearby places when location or place type changes
-  useEffect(() => {
-    if (!mapRef.current || !markerPosition || !searchLocation) return;
-    
-    const service = new window.google.maps.places.PlacesService(mapRef.current);
-    service.nearbySearch(
-      { 
-        location: markerPosition, 
-        radius: 2000,
-        type: placeType 
-      },
-      (results, status) => {
-        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-          const sortedResults = results
-            .filter(place => place.rating && place.rating >= 3.0)
-            .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-            .slice(0, 8);
-          
-          setNearbyPlaces(sortedResults);
-          const heatmapPoints = sortedResults.map(p => 
-            new window.google.maps.LatLng(p.geometry.location.lat(), p.geometry.location.lng())
-          );
-          setHeatmapData(heatmapPoints);
-        } else {
-          setNearbyPlaces([]);
-          setHeatmapData([]);
-        }
-      }
-    );
-  }, [markerPosition, placeType, searchLocation]);
-
-  // Event handlers
-  const onMapLoad = useCallback((map) => {
-    mapRef.current = map;
-  }, []);
-
-  const onPlaceChanged = () => {
-    const place = autocompleteRef.current.getPlace();
-    if (!place.geometry || !place.geometry.location) {
-      alert('Invalid location selected. Please choose from the dropdown.');
-      return;
-    }
-    const location = {
-      lat: place.geometry.location.lat(),
-      lng: place.geometry.location.lng(),
-    };
-    
-    // NEW: Set search location and generate properties
-    setSearchLocation(location);
-    setSearchedLocationName(place.formatted_address || place.name || 'Selected Location');
-    setAllProperties(generateMockProperties(location));
-    
-    setMapCenter(location);
-    setMarkerPosition(location);
-    setZoom(14);
-    setDirections(null);
-    setDistanceInfo('');
-  };
-
-  const getDirectionsToPlace = (destination) => {
-    if (!destination.geometry || !destination.geometry.location) return;
-    const destLatLng = {
-        lat: destination.geometry.location.lat(),
-        lng: destination.geometry.location.lng()
-    };
-    const service = new window.google.maps.DirectionsService();
-    service.route(
-      {
-        origin: markerPosition,
-        destination: destLatLng,
-        travelMode: window.google.maps.TravelMode[travelMode],
-      },
-      (result, status) => {
-        if (status === 'OK' && result) {
-          setDirections(result);
-          const leg = result.routes[0].legs[0];
-          setDistanceInfo(`${leg.distance?.text} (${leg.duration?.text})`);
-        } else {
-          setDirections(null);
-          setDistanceInfo('');
-          alert('Could not calculate directions.');
-        }
-      }
-    );
-  };
-
-  const handleFeatureToggle = (feature) => {
-    setPropertyFilters(prev => ({
-      ...prev,
-      features: prev.features.includes(feature)
-        ? prev.features.filter(f => f !== feature)
-        : [...prev.features, feature],
-    }));
-  };
-
-  // Property saving functions
-  const saveProperty = (property) => {
-    const isAlreadySaved = savedProperties.some(p => p.id === property.id);
-    if (isAlreadySaved) {
-      setSavedProperties(prev => prev.filter(p => p.id !== property.id));
-      alert('Property removed from saved list');
-    } else {
-      setSavedProperties(prev => [...prev, { ...property, savedAt: new Date().toISOString() }]);
-      alert('Property saved successfully!');
-    }
-  };
-
-  const isPropertySaved = (propertyId) => {
-    return savedProperties.some(p => p.id === propertyId);
-  };
-
-  const removeSavedProperty = (propertyId) => {
-    setSavedProperties(prev => prev.filter(p => p.id !== propertyId));
-  };
-
-  const getWalkScoreColor = (score) => {
-    if (score >= 90) return '#00C853';
-    if (score >= 70) return '#64DD17';
-    if (score >= 50) return '#FFC107';
-    if (score >= 25) return '#FF9800';
-    return '#F44336';
-  };
-
-  const getWalkScoreLabel = (score) => {
-    if (score >= 90) return 'Walker\'s Paradise';
-    if (score >= 70) return 'Very Walkable';
-    if (score >= 50) return 'Somewhat Walkable';
-    if (score >= 25) return 'Car-Dependent';
-    return 'Car-Dependent';
-  };
-
-  const getGradeColor = (grade) => {
-    const colors = {
-      'A+': '#4CAF50', 'A': '#66BB6A', 'A-': '#81C784',
-      'B+': '#FFB74D', 'B': '#FFA726', 'B-': '#FF9800'
-    };
-    return colors[grade] || '#9E9E9E';
-  };
-
-  // UI Components
-  const Section = ({ title, icon, children, defaultOpen = false }) => (
-    <details open={defaultOpen} className="sidebar-section">
-      <summary>
-        {icon}
-        <span style={{ fontWeight: 600 }}>{title}</span>
-        <div className="chevron">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
-        </div>
-      </summary>
-      <div className="sidebar-section-content">{children}</div>
-    </details>
-  );
-
-  const icons = {
-    search: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
-    filters: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.46L22 3z"></path></svg>,
-    routes: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="5" x2="6" y2="17"></line><polyline points="14 5 18 5 18 9"></polyline><line x1="6" y1="7" x2="18" y2="19"></line><polyline points="10 19 6 19 6 15"></polyline></svg>,
-    trends: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>,
-    heart: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>,
-    analytics: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>,
-    recommendation: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4"></path><path d="M21 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path><path d="M3 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path><path d="M12 21c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path><path d="M12 3c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path></svg>
-  };
-
-  // Analytics Dashboard Components
-  const AnalyticsModal = () => {
-    if (!showAnalytics) return null;
-
-    const COLORS = ['#00aaff', '#4CAF50', '#FF9800', '#F44336', '#9C27B0', '#795548'];
-
-    const propertyTypeData = filteredProperties.reduce((acc, property) => {
-      acc[property.propertyType] = (acc[property.propertyType] || 0) + 1;
-      return acc;
-    }, {});
-
-    const pieData = Object.entries(propertyTypeData).map(([type, count]) => ({
-      name: type,
-      value: count
-    }));
-
-    const priceRangeData = [
-      { range: '0-500K', count: filteredProperties.filter(p => p.price < 500000).length },
-      { range: '500K-1M', count: filteredProperties.filter(p => p.price >= 500000 && p.price < 1000000).length },
-      { range: '1M-1.5M', count: filteredProperties.filter(p => p.price >= 1000000 && p.price < 1500000).length },
-      { range: '1.5M+', count: filteredProperties.filter(p => p.price >= 1500000).length }
-    ];
-
-    return (
-      <div className="modal-overlay" onClick={() => setShowAnalytics(false)}>
-        <div className="analytics-modal" onClick={e => e.stopPropagation()}>
-          <div className="analytics-header">
-            <h2>📊 Analytics Dashboard</h2>
-            <button onClick={() => setShowAnalytics(false)} className="close-btn">✕</button>
-          </div>
-          
-          <div className="analytics-tabs">
-            <button 
-              className={`tab-btn ${activeAnalyticsTab === 'market' ? 'active' : ''}`}
-              onClick={() => setActiveAnalyticsTab('market')}
-            >
-              📈 Market Analytics
-            </button>
-            <button 
-              className={`tab-btn ${activeAnalyticsTab === 'investment' ? 'active' : ''}`}
-              onClick={() => setActiveAnalyticsTab('investment')}
-            >
-              💰 Investment Analysis
-            </button>
-            <button 
-              className={`tab-btn ${activeAnalyticsTab === 'neighborhood' ? 'active' : ''}`}
-              onClick={() => setActiveAnalyticsTab('neighborhood')}
-            >
-              🏘️ Neighborhood Scores
-            </button>
-            <button 
-              className={`tab-btn ${activeAnalyticsTab === 'recommendations' ? 'active' : ''}`}
-              onClick={() => setActiveAnalyticsTab('recommendations')}
-            >
-              🎯 Recommendations
-            </button>
-          </div>
-
-          <div className="analytics-content">
-            {!searchLocation ? (
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                height: '300px',
-                textAlign: 'center',
-                color: '#aaa'
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '20px' }}>🔍</div>
-                <h3 style={{ color: '#fff', marginBottom: '10px' }}>No Location Selected</h3>
-                <p>Please search for a location first to view analytics and property data.</p>
-              </div>
-            ) : activeAnalyticsTab === 'market' && (
-              <div className="analytics-grid">
-                <div className="chart-container">
-                  <h3>Market Price Trends (12 Months)</h3>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <LineChart data={marketData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                      <XAxis dataKey="month" stroke="#aaa" />
-                      <YAxis stroke="#aaa" tickFormatter={(value) => `RM${(value/1000).toFixed(0)}K`} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#2c3038', border: '1px solid #444', borderRadius: '6px' }}
-                        labelStyle={{ color: '#fff' }}
-                        formatter={(value) => [`RM${value.toLocaleString()}`, 'Average Price']}
-                      />
-                      <Line type="monotone" dataKey="averagePrice" stroke="#00aaff" strokeWidth={3} dot={{ fill: '#00aaff', strokeWidth: 2, r: 4 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="chart-container">
-                  <h3>Property Type Distribution</h3>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={false}
-                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                        outerRadius={80}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#2c3038', border: '1px solid #444', borderRadius: '6px' }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="chart-container">
-                  <h3>Price Range Analysis</h3>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <BarChart data={priceRangeData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                      <XAxis dataKey="range" stroke="#aaa" />
-                      <YAxis stroke="#aaa" />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#2c3038', border: '1px solid #444', borderRadius: '6px' }}
-                        labelStyle={{ color: '#fff' }}
-                      />
-                      <Bar dataKey="count" fill="#4CAF50" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="chart-container">
-                  <h3>Market Metrics</h3>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <AreaChart data={marketData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#444" />
-                      <XAxis dataKey="month" stroke="#aaa" />
-                      <YAxis stroke="#aaa" />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#2c3038', border: '1px solid #444', borderRadius: '6px' }}
-                        labelStyle={{ color: '#fff' }}
-                      />
-                      <Area type="monotone" dataKey="inventory" stackId="1" stroke="#FF9800" fill="#FF9800" fillOpacity={0.6} />
-                      <Area type="monotone" dataKey="salesVolume" stackId="2" stroke="#4CAF50" fill="#4CAF50" fillOpacity={0.6} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            )}
-
-            {activeAnalyticsTab === 'investment' && searchLocation && (
-              <div className="investment-analysis">
-                <div className="investment-params">
-                  <h3>Investment Parameters</h3>
-                  <div className="params-grid">
-                    <div>
-                      <label>Down Payment (%)</label>
-                      <input
-                        type="number"
-                        value={investmentParams.downPayment}
-                        onChange={e => setInvestmentParams(prev => ({...prev, downPayment: parseFloat(e.target.value) || 0}))}
-                        className="param-input"
-                      />
-                    </div>
-                    <div>
-                      <label>Loan Term (years)</label>
-                      <input
-                        type="number"
-                        value={investmentParams.loanTerm}
-                        onChange={e => setInvestmentParams(prev => ({...prev, loanTerm: parseFloat(e.target.value) || 0}))}
-                        className="param-input"
-                      />
-                    </div>
-                    <div>
-                      <label>Interest Rate (%)</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={investmentParams.interestRate}
-                        onChange={e => setInvestmentParams(prev => ({...prev, interestRate: parseFloat(e.target.value) || 0}))}
-                        className="param-input"
-                      />
-                    </div>
-                    <div>
-                      <label>Monthly Expenses (RM)</label>
-                      <input
-                        type="number"
-                        value={investmentParams.monthlyExpenses}
-                        onChange={e => setInvestmentParams(prev => ({...prev, monthlyExpenses: parseFloat(e.target.value) || 0}))}
-                        className="param-input"
-                      />
-                    </div>
-                    <div>
-                      <label>Expected Appreciation (%)</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={investmentParams.expectedAppreciation}
-                        onChange={e => setInvestmentParams(prev => ({...prev, expectedAppreciation: parseFloat(e.target.value) || 0}))}
-                        className="param-input"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="investment-results">
-                  <h3>Top Investment Opportunities</h3>
-                  <div className="investment-cards">
-                    {filteredProperties.slice(0, 3).map(property => {
-                      const metrics = calculateInvestmentMetrics(property);
-                      return (
-                        <div key={property.id} className="investment-card">
-                          <div className="investment-header">
-                            <h4>{property.title}</h4>
-                            <div className="investment-grade" style={{ background: getGradeColor(property.investmentGrade) }}>
-                              {property.investmentGrade}
-                            </div>
-                          </div>
-                          
-                          <div className="investment-metrics">
-                            <div className="metric">
-                              <span className="metric-label">Property Price</span>
-                              <span className="metric-value">RM {property.price.toLocaleString()}</span>
-                            </div>
-                            <div className="metric">
-                              <span className="metric-label">Down Payment</span>
-                              <span className="metric-value">RM {metrics.downPaymentAmount.toLocaleString()}</span>
-                            </div>
-                            <div className="metric">
-                              <span className="metric-label">Monthly Cash Flow</span>
-                              <span className={`metric-value ${metrics.monthlyCashFlow >= 0 ? 'positive' : 'negative'}`}>
-                                RM {metrics.monthlyCashFlow.toLocaleString()}
-                              </span>
-                            </div>
-                            <div className="metric">
-                              <span className="metric-label">Gross Yield</span>
-                              <span className="metric-value">{metrics.grossYield.toFixed(2)}%</span>
-                            </div>
-                            <div className="metric">
-                              <span className="metric-label">Cash-on-Cash Return</span>
-                              <span className={`metric-value ${metrics.cashOnCashReturn >= 0 ? 'positive' : 'negative'}`}>
-                                {metrics.cashOnCashReturn.toFixed(2)}%
-                              </span>
-                            </div>
-                            <div className="metric">
-                              <span className="metric-label">10-Year Total Return</span>
-                              <span className="metric-value">{metrics.totalReturn.toFixed(1)}%</span>
-                            </div>
-                          </div>
-                          
-                          <button 
-                            onClick={() => {
-                              setSelectedProperty(property);
-                              setMapCenter({lat: property.lat, lng: property.lng});
-                              setZoom(16);
-                              setShowAnalytics(false);
-                            }}
-                            className="view-property-btn"
-                          >
-                            View Property
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeAnalyticsTab === 'neighborhood' && searchLocation && (
-              <div className="neighborhood-analysis">
-                <h3>Neighborhood Comparison</h3>
-                <div className="neighborhood-cards">
-                  {neighborhoodData.map(district => (
-                    <div key={district.name} className="neighborhood-card">
-                      <div className="neighborhood-header">
-                        <h4>{district.name}</h4>
-                        <div className="overall-score">
-                          <span className="score-value">{district.overallScore}</span>
-                          <span className="score-label">/100</span>
-                        </div>
-                      </div>
-                      
-                      <div className="score-breakdown">
-                        <div className="score-item">
-                          <span>🛡️ Safety</span>
-                          <div className="score-bar">
-                            <div className="score-fill" style={{ width: `${district.safetyScore}%`, backgroundColor: '#4CAF50' }}></div>
-                            <span className="score-text">{district.safetyScore}</span>
-                          </div>
-                        </div>
-                        <div className="score-item">
-                          <span>🎓 Schools</span>
-                          <div className="score-bar">
-                            <div className="score-fill" style={{ width: `${district.schoolScore}%`, backgroundColor: '#2196F3' }}></div>
-                            <span className="score-text">{district.schoolScore}</span>
-                          </div>
-                        </div>
-                        <div className="score-item">
-                          <span>🚇 Transport</span>
-                          <div className="score-bar">
-                            <div className="score-fill" style={{ width: `${district.transportScore}%`, backgroundColor: '#FF9800' }}></div>
-                            <span className="score-text">{district.transportScore}</span>
-                          </div>
-                        </div>
-                        <div className="score-item">
-                          <span>🏪 Amenities</span>
-                          <div className="score-bar">
-                            <div className="score-fill" style={{ width: `${district.amenitiesScore}%`, backgroundColor: '#9C27B0' }}></div>
-                            <span className="score-text">{district.amenitiesScore}</span>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="neighborhood-stats">
-                        <div className="stat">
-                          <span className="stat-label">Avg Price</span>
-                          <span className="stat-value">RM {(district.averagePrice / 1000).toFixed(0)}K</span>
-                        </div>
-                        <div className="stat">
-                          <span className="stat-label">Growth</span>
-                          <span className="stat-value positive">+{district.priceGrowth.toFixed(1)}%</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeAnalyticsTab === 'recommendations' && searchLocation && (
-              <div className="recommendations-analysis">
-                <h3>🎯 Property Recommendations Based on Your Preferences</h3>
-                <div className="recommendation-explanation">
-                  <p>These recommendations are based on your search criteria, preferred features, and investment potential:</p>
-                </div>
-                
-                <div className="recommendations-list">
-                  {getPropertyRecommendations.map((property, index) => {
-                    const neighborhoodScore = calculateNeighborhoodScore(property);
-                    const metrics = calculateInvestmentMetrics(property);
-                    
-                    return (
-                      <div key={property.id} className="recommendation-card">
-                        <div className="recommendation-rank">#{index + 1}</div>
-                        
-                        <div className="recommendation-content">
-                          <div className="recommendation-header">
-                            <h4>{property.title}</h4>
-                            <div className="recommendation-score">
-                              <span className="score-value">{property.recommendationScore}</span>
-                              <span className="score-label">/100</span>
-                            </div>
-                          </div>
-                          
-                          <div className="recommendation-details">
-                            <div className="detail-row">
-                              <span>💰 Price:</span>
-                              <span>RM {property.price.toLocaleString()}</span>
-                            </div>
-                            <div className="detail-row">
-                              <span>📐 Size:</span>
-                              <span>{property.size} sqft</span>
-                            </div>
-                            <div className="detail-row">
-                              <span>🏷️ Type:</span>
-                              <span>{property.propertyType}</span>
-                            </div>
-                            <div className="detail-row">
-                              <span>📍 District:</span>
-                              <span>{property.schoolDistrict}</span>
-                            </div>
-                            <div className="detail-row">
-                              <span>🚶 Walk Score:</span>
-                              <span style={{ color: getWalkScoreColor(property.walkScore) }}>{property.walkScore}/100</span>
-                            </div>
-                            <div className="detail-row">
-                              <span>🏘️ Neighborhood:</span>
-                              <span>{neighborhoodScore}/100</span>
-                            </div>
-                            <div className="detail-row">
-                              <span>💹 Gross Yield:</span>
-                              <span className={metrics.grossYield >= 5 ? 'positive' : ''}>{metrics.grossYield.toFixed(2)}%</span>
-                            </div>
-                            <div className="detail-row">
-                              <span>⭐ Investment Grade:</span>
-                              <span className="investment-grade-small" style={{ background: getGradeColor(property.investmentGrade) }}>
-                                {property.investmentGrade}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          <div className="recommendation-features">
-                            <strong>Features:</strong>
-                            <div className="features-list">
-                              {property.features?.map(feature => (
-                                <span key={feature} className="feature-tag">
-                                  {feature}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                          
-                          <div className="recommendation-actions">
-                            <button 
-                              onClick={() => {
-                                setSelectedProperty(property);
-                                setMapCenter({lat: property.lat, lng: property.lng});
-                                setZoom(16);
-                                setShowAnalytics(false);
-                              }}
-                              className="primary-btn"
-                            >
-                              📍 View on Map
-                            </button>
-                            <button 
-                              onClick={() => saveProperty(property)}
-                              className={`save-btn ${isPropertySaved(property.id) ? 'saved' : ''}`}
-                            >
-                              {isPropertySaved(property.id) ? '❤️ Saved' : '🤍 Save'}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const css = `
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    .sidebar-container { scrollbar-width: thin; scrollbar-color: #555 #2c3038; }
-    .sidebar-container::-webkit-scrollbar { width: 8px; }
-    .sidebar-container::-webkit-scrollbar-track { background: #2c3038; }
-    .sidebar-container::-webkit-scrollbar-thumb { background-color: #555; border-radius: 6px; border: 2px solid #2c3038; }
-    .sidebar-section { background: #2c3038; border-radius: 8px; overflow: hidden; margin-bottom: 15px; }
-    .sidebar-section summary { display: flex; align-items: center; gap: 10px; padding: 15px; cursor: pointer; list-style: none; font-size: 16px; color: #fff; }
-    .sidebar-section summary::-webkit-details-marker { display: none; }
-    .sidebar-section .chevron { margin-left: auto; transition: transform 0.2s; }
-    .sidebar-section[open] .chevron { transform: rotate(180deg); }
-    .sidebar-section-content { padding: 0 15px 15px 15px; border-top: 1px solid #444; }
-    .input-field, .select-field { width: 100%; background: #1f2328; color: #e0e0e0; border: 1px solid #444; border-radius: 6px; padding: 10px; font-size: 14px; outline: none; transition: border-color 0.2s; box-sizing: border-box; }
-    .input-field:focus, .select-field:focus { border-color: #00aaff; }
-    .input-field::placeholder { color: #888; }
-    .saved-property-item { background: #1f2328; padding: 12px; border-radius: 6px; margin-bottom: 8px; border: 1px solid #333; }
-    .property-actions { display: flex; gap: 8px; margin-top: 8px; }
-    .save-btn { background: #4CAF50; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; transition: background 0.2s; }
-    .save-btn:hover { background: #45a049; }
-    .save-btn.saved { background: #FF9800; }
-    .save-btn.saved:hover { background: #f57c00; }
-    .property-price { color: #00aaff; font-weight: bold; font-size: 14px; }
-    .primary-btn { display: flex; justify-content: center; align-items: center; gap: 8px; width: 100%; background: #00aaff; color: white; padding: 10px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-    .primary-btn:hover { background: #0095e0; }
-    .secondary-btn { display: flex; justify-content: center; align-items: center; gap: 8px; width: 100%; background: #404652; color: white; padding: 10px; border-radius: 6px; border: none; font-weight: 500; cursor: pointer; transition: background 0.2s; }
-    .secondary-btn:hover { background: #505866; }
-    .label-text { font-size: 14px; font-weight: 500; color: #aaa; display: block; margin-bottom: 8px; margin-top: 12px; }
-    .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .walkability-bar { height: 8px; border-radius: 4px; margin: 5px 0; position: relative; overflow: hidden; }
-    .walkability-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
-    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .modal-content { background: #2c3038; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; color: white; }
-    .delete-btn { background: #f44336; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; margin-left: 8px; }
-    .close-btn { background: #f44336; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
-    
-    /* Analytics Modal Styles */
-    .analytics-modal { 
-      background: #1f2328; 
-      width: 95vw; 
-      height: 90vh; 
-      border-radius: 12px; 
-      display: flex; 
-      flex-direction: column; 
-      overflow: hidden;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-    }
-    .analytics-header { 
-      display: flex; 
-      justify-content: space-between; 
-      align-items: center; 
-      padding: 20px 25px; 
-      border-bottom: 1px solid #444; 
-      background: #2c3038;
-    }
-    .analytics-header h2 { margin: 0; color: #fff; fontsize: 24px; }
-    .analytics-tabs { 
-      display: flex; 
-      background: #2c3038; 
-      border-bottom: 1px solid #444; 
-      overflow-x: auto;
-    }
-    .tab-btn { 
-      background: transparent; 
-      color: #aaa; 
-      border: none; 
-      padding: 15px 20px; 
-      cursor: pointer; 
-      transition: all 0.2s; 
-      white-space: nowrap;
-      font-size: 14px;
-      font-weight: 500;
-    }
-    .tab-btn:hover { color: #fff; background: #404652; }
-    .tab-btn.active { color: #00aaff; background: #1f2328; border-bottom: 2px solid #00aaff; }
-    .analytics-content { 
-      flex: 1; 
-      padding: 25px; 
-      overflow-y: auto; 
-      background: #1f2328;
-    }
-    .analytics-grid { 
-      display: grid; 
-      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); 
-      gap: 20px; 
-    }
-    .chart-container { 
-      background: #2c3038; 
-      padding: 20px; 
-      border-radius: 8px; 
-      border: 1px solid #444;
-    }
-    .chart-container h3 { 
-      margin: 0 0 15px 0; 
-      color: #fff; 
-      font-size: 16px;
-      font-weight: 600;
-    }
-    
-    /* Investment Analysis Styles */
-    .investment-analysis { display: flex; flex-direction: column; gap: 25px; }
-    .investment-params { background: #2c3038; padding: 20px; border-radius: 8px; border: 1px solid #444; }
-    .investment-params h3 { margin: 0 0 15px 0; color: #fff; }
-    .params-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-    .params-grid label { display: block; font-size: 14px; color: #aaa; margin-bottom: 5px; }
-    .param-input { width: 100%; background: #1f2328; color: #e0e0e0; border: 1px solid #444; border-radius: 4px; padding: 8px; }
-    .investment-results h3 { color: #fff; margin-bottom: 15px; }
-    .investment-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
-    .investment-card { background: #2c3038; padding: 20px; border-radius: 8px; border: 1px solid #444; }
-    .investment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .investment-header h4 { margin: 0; color: #fff; }
-    .investment-grade { color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; }
-    .investment-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
-    .metric { display: flex; justify-content: space-between; padding: 8px; background: #1f2328; border-radius: 4px; }
-    .metric-label { color: #aaa; font-size: 12px; }
-    .metric-value { color: #fff; font-weight: bold; font-size: 12px; }
-    .metric-value.positive { color: #4CAF50; }
-    .metric-value.negative { color: #f44336; }
-    .view-property-btn { width: 100%; background: #00aaff; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; }
-    
-    /* Neighborhood Analysis Styles */
-    .neighborhood-analysis h3 { color: #fff; margin-bottom: 20px; }
-    .neighborhood-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-    .neighborhood-card { background: #2c3038; padding: 20px; border-radius: 8px; border: 1px solid #444; }
-    .neighborhood-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .neighborhood-header h4 { margin: 0; color: #fff; }
-    .overall-score { text-align: center; }
-    .score-value { font-size: 24px; font-weight: bold; color: #00aaff; }
-    .score-label { font-size: 14px; color: #aaa; }
-    .score-breakdown { margin-bottom: 15px; }
-    .score-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-    .score-item span:first-child { color: #e0e0e0; font-size: 14px; min-width: 100px; }
-    .score-bar { flex: 1; height: 20px; background: #1f2328; border-radius: 10px; margin: 0 10px; position: relative; overflow: hidden; }
-    .score-fill { height: 100%; border-radius: 10px; transition: width 0.3s ease; }
-    .score-text { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); color: #fff; font-size: 12px; font-weight: bold; }
-    .neighborhood-stats { display: flex; justify-content: space-between; padding-top: 15px; border-top: 1px solid #444; }
-    .stat { text-align: center; }
-    .stat-label { display: block; color: #aaa; font-size: 12px; }
-    .stat-value { color: #fff; font-weight: bold; }
-    .stat-value.positive { color: #4CAF50; }
-    
-    /* Recommendations Styles */
-    .recommendations-analysis h3 { color: #fff; margin-bottom: 15px; }
-    .recommendation-explanation { background: #2c3038; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #444; }
-    .recommendation-explanation p { margin: 0; color: #aaa; font-size: 14px; }
-    .recommendations-list { display: flex; flex-direction: column; gap: 15px; }
-    .recommendation-card { background: #2c3038; padding: 20px; border-radius: 8px; border: 1px solid #444; display: flex; gap: 15px; }
-    .recommendation-rank { 
-      background: linear-gradient(135deg, #00aaff, #0095e0); 
-      color: white; 
-      width: 40px; 
-      height: 40px; 
-      border-radius: 50%; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      font-weight: bold; 
-      font-size: 16px;
-      flex-shrink: 0;
-    }
-    .recommendation-content { flex: 1; }
-    .recommendation-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .recommendation-header h4 { margin: 0; color: #fff; }
-    .recommendation-score { text-align: center; }
-    .recommendation-details { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
-    .detail-row { display: flex; justify-content: space-between; padding: 6px; background: #1f2328; border-radius: 4px; }
-    .detail-row span:first-child { color: #aaa; font-size: 13px; }
-    .detail-row span:last-child { color: #fff; font-weight: 500; font-size: 13px; }
-    .detail-row .positive { color: #4CAF50; }
-    .investment-grade-small { padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; color: white; }
-    .recommendation-features { margin-bottom: 15px; }
-    .recommendation-features strong { color: #fff; font-size: 13px; }
-    .features-list { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; }
-    .feature-tag { background: #404652; color: #e0e0e0; padding: 2px 6px; border-radius: 3px; font-size: 11px; }
-    .recommendation-actions { display: flex; gap: 10px; }
-    .recommendation-actions .primary-btn, .recommendation-actions .save-btn { 
-      flex: 1; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      gap: 5px; 
-      padding: 8px 12px; 
-      font-size: 12px;
-    }
-    
-    /* No Search State Styles */
-    .no-search-message {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 40px 20px;
-      background: #2c3038;
-      border-radius: 8px;
-      border: 1px dashed #444;
-      color: #aaa;
-    }
-    .no-search-message .icon {
-      font-size: 48px;
-      margin-bottom: 20px;
-      opacity: 0.7;
-    }
-    .no-search-message h3 {
-      color: #fff;
-      margin: 0 0 10px 0;
-      font-size: 18px;
-    }
-    .no-search-message p {
-      margin: 0;
-      font-size: 14px;
-      max-width: 300px;
-      line-height: 1.5;
-    }
-  `;
-
-  if (loadError) return <div style={{color: 'white', padding: '20px'}}>Error loading maps</div>;
-  if (!isLoaded) return <div style={{color: 'white', padding: '20px'}}>Loading Maps...</div>;
-
-  return (
-    <div style={{ display: 'flex', background: '#1f2328' }}>
-      <style>{css}</style>
-      
-      {/* Analytics Modal */}
-      <AnalyticsModal />
-      
-      {/* Sidebar */}
-      <div className="sidebar-container" style={{ width: 400, height: '100vh', overflowY: 'auto', background: '#1f2328', padding: '20px', fontFamily: "'Inter', sans-serif" }}>
-        
-        <div style={{ marginBottom: '25px' }}>
-          <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff', margin: 0 }}>GeoHome Pro</h1>
-          <p style={{ fontSize: '14px', color: '#888', marginTop: '5px' }}>Enhanced Real Estate & Market Analysis</p>
-          {searchedLocationName && (
-            <div style={{ 
-              background: '#00aaff', 
-              color: 'white', 
-              padding: '8px 12px', 
-              borderRadius: '6px', 
-              fontSize: '12px', 
-              marginTop: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
-              <span>📍</span>
-              <span>Searching in: {searchedLocationName}</span>
-            </div>
-          )}
-        </div>
-        
-        {/* Analytics Dashboard Button */}
-        <button 
-          onClick={() => setShowAnalytics(true)}
-          className="primary-btn"
-          style={{ marginBottom: '20px' }}
-        >
-          {icons.analytics} Analytics Dashboard
-        </button>
-        
-        {/* Location Search */}
-        <div style={{ background: '#2c3038', borderRadius: '8px', padding: '15px', marginBottom: '20px' }}>
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '0 0 15px 0', fontSize: '16px', color: '#fff', fontWeight: 600 }}>
-            {icons.search} Location Search
-          </h2>
-          <Autocomplete onLoad={ac => (autocompleteRef.current = ac)} onPlaceChanged={onPlaceChanged}>
-            <input type="text" placeholder="Search for a location (e.g., Kuala Lumpur)..." className="input-field" />
-          </Autocomplete>
-          
-          {!searchLocation && (
-            <div style={{ 
-              marginTop: '15px', 
-              padding: '12px', 
-              background: '#1f2328', 
-              borderRadius: '6px', 
-              border: '1px solid #444',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔍</div>
-              <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>
-                Enter a location to discover properties and market insights
-              </p>
-            </div>
-          )}
-        </div>
-
-        {/* Enhanced Property Filters - Only show if location searched */}
-        {searchLocation ? (
-          <Section title="Advanced Property Filters" icon={icons.filters} defaultOpen>
-            <label className="label-text">Price Range (RM)</label>
-            <div className="filter-grid">
-              <NumberInput
-                value={propertyFilters.minPrice}
-                onChange={(value) => handleFilterChange('minPrice', value)}
-                placeholder="Min Price"
-                className="input-field"
-              />
-              <NumberInput
-                value={propertyFilters.maxPrice}
-                onChange={(value) => handleFilterChange('maxPrice', value)}
-                placeholder="Max Price"
-                className="input-field"
-              />
-            </div>
-
-            <label className="label-text">Size (sqft)</label>
-            <div className="filter-grid">
-              <NumberInput
-                value={propertyFilters.minSize}
-                onChange={(value) => handleFilterChange('minSize', value)}
-                placeholder="Min Size"
-                className="input-field"
-              />
-              <NumberInput
-                value={propertyFilters.maxSize}
-                onChange={(value) => handleFilterChange('maxSize', value)}
-                placeholder="Max Size"
-                className="input-field"
-              />
-            </div>
-
-            <label className="label-text">Lot Size (sqft)</label>
-            <div className="filter-grid">
-              <NumberInput
-                value={propertyFilters.minLotSize}
-                onChange={(value) => handleFilterChange('minLotSize', value)}
-                placeholder="Min Lot Size"
-                className="input-field"
-              />
-              <NumberInput
-                value={propertyFilters.maxLotSize}
-                onChange={(value) => handleFilterChange('maxLotSize', value)}
-                placeholder="Max Lot Size"
-                className="input-field"
-              />
-            </div>
-
-            <label className="label-text">Year Built</label>
-            <div className="filter-grid">
-              <input
-                type="text"
-                value={propertyFilters.minYearBuilt}
-                onChange={e => handleYearChange('minYearBuilt', e.target.value)}
-                placeholder="Min Year (e.g., 2000)"
-                className="input-field"
-                maxLength="4"
-                autoComplete="off"
-              />
-              <input
-                type="text"
-                value={propertyFilters.maxYearBuilt}
-                onChange={e => handleYearChange('maxYearBuilt', e.target.value)}
-                placeholder="Max Year (e.g., 2024)"
-                className="input-field"
-                maxLength="4"
-                autoComplete="off"
-              />
-            </div>
-
-            <label className="label-text">Property Type</label>
-            <select
-              value={propertyFilters.propertyType}
-              onChange={e => setPropertyFilters({...propertyFilters, propertyType: e.target.value})}
-              className="select-field"
-            >
-              <option value="">All Types</option>
-              <option value="Condo">Condo</option>
-              <option value="Landed House">Landed House</option>
-              <option value="Apartment">Apartment</option>
-              <option value="Townhouse">Townhouse</option>
-              <option value="Villa">Villa</option>
-            </select>
-
-            <label className="label-text">School District</label>
-            <select
-              value={propertyFilters.schoolDistrict}
-              onChange={e => setPropertyFilters({...propertyFilters, schoolDistrict: e.target.value})}
-              className="select-field"
-            >
-              <option value="">All Districts</option>
-              <option value="Mont Kiara">Mont Kiara</option>
-              <option value="KLCC">KLCC</option>
-              <option value="Bangsar">Bangsar</option>
-              <option value="Sri Hartamas">Sri Hartamas</option>
-              <option value="Damansara">Damansara</option>
-            </select>
-
-            <label className="label-text">Walk Score (Walkability)</label>
-            <div style={{ padding: '10px 0' }}>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={propertyFilters.minWalkScore}
-                onChange={e => setPropertyFilters({...propertyFilters, minWalkScore: parseInt(e.target.value)})}
-                style={{ width: '100%', accentColor: '#00aaff' }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#aaa', marginTop: '5px' }}>
-                <span>Car-Dependent (0)</span>
-                <span style={{ color: getWalkScoreColor(propertyFilters.minWalkScore), fontWeight: 'bold' }}>
-                  {propertyFilters.minWalkScore}+
-                </span>
-                <span>Walker's Paradise (100)</span>
-              </div>
-            </div>
-
-            <label className="label-text">Features</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              {['pool', 'gym', 'parking', 'security', 'playground', 'garden'].map(feature => (
-                <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    id={`feat-${feature}`}
-                    type="checkbox"
-                    checked={propertyFilters.features.includes(feature)}
-                    onChange={() => handleFeatureToggle(feature)}
-                    style={{ accentColor: '#00aaff' }}
-                  />
-                  <label htmlFor={`feat-${feature}`} style={{ color: '#e0e0e0', fontSize: '14px', textTransform: 'capitalize' }}>
-                    {feature}
-                  </label>
-                </div>
-              ))}
-            </div>
-            
-            <div style={{ marginTop: '15px', padding: '10px', background: '#1f2328', borderRadius: '6px' }}>
-              <div style={{ fontSize: '14px', color: '#00aaff', fontWeight: 'bold' }}>
-                {filteredProperties.length} properties match your criteria
-              </div>
-            </div>
-          </Section>
-        ) : (
-          <div className="no-search-message">
-            <div className="icon">🏠</div>
-            <h3>No Location Selected</h3>
-            <p>Search for a location above to view property filters and discover real estate opportunities in that area.</p>
-          </div>
-        )}
-
-        {/* Property Recommendations - Only show if location searched */}
-        {searchLocation ? (
-          <Section title="🎯 AI Recommendations" icon={icons.recommendation}>
-            <div style={{ marginBottom: '15px' }}>
-              <p style={{ fontSize: '12px', color: '#888', margin: '0 0 10px 0' }}>
-                Based on your search preferences and market analysis
-              </p>
-            </div>
-            
-            {getPropertyRecommendations.length > 0 ? (
-              <>
-                {getPropertyRecommendations.slice(0, 3).map((property, index) => (
-                  <div key={property.id} style={{ 
-                    background: '#1f2328', 
-                    padding: '12px', 
-                    borderRadius: '6px', 
-                    marginBottom: '10px',
-                    border: '1px solid #333'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                      <div style={{ 
-                        background: '#00aaff', 
-                        color: 'white', 
-                        width: '24px', 
-                        height: '24px', 
-                        borderRadius: '50%', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center', 
-                        fontSize: '12px', 
-                        fontWeight: 'bold' 
-                      }}>
-                        {index + 1}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <strong style={{ color: '#fff', fontSize: '14px' }}>{property.title}</strong>
-                        <div style={{ 
-                          background: getGradeColor(property.investmentGrade), 
-                          color: 'white', 
-                          padding: '2px 6px', 
-                          borderRadius: '3px', 
-                          fontSize: '10px', 
-                          fontWeight: 'bold',
-                          display: 'inline-block',
-                          marginLeft: '8px'
-                        }}>
-                          {property.investmentGrade}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ color: '#00aaff', fontWeight: 'bold', fontSize: '12px' }}>
-                          {property.recommendationScore}/100
-                        </div>
-                        <div style={{ color: '#888', fontSize: '10px' }}>Match Score</div>
-                      </div>
-                    </div>
-                    
-                    <div className="property-price" style={{ marginBottom: '5px' }}>
-                      RM {property.price.toLocaleString()}
-                    </div>
-                    
-                    <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '8px' }}>
-                      {property.size} sqft • {property.propertyType} • {property.schoolDistrict}
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        onClick={() => {
-                          setSelectedProperty(property);
-                          setMapCenter({ lat: property.lat, lng: property.lng });
-                          setZoom(16);
-                        }}
-                        style={{
-                          background: '#00aaff',
-                          color: 'white',
-                          border: 'none',
-                          padding: '6px 10px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          cursor: 'pointer',
-                          flex: 1
-                        }}
-                      >
-                        📍 View
-                      </button>
-                      <button
-                        onClick={() => saveProperty(property)}
-                        className={`save-btn ${isPropertySaved(property.id) ? 'saved' : ''}`}
-                        style={{ flex: 1, fontSize: '11px' }}
-                      >
-                        {isPropertySaved(property.id) ? '❤️ Saved' : '🤍 Save'}
-                      </button>
-                    </div>
-                  </div>
-                ))}
+})}
                 
                 <button 
                   onClick={() => {
@@ -2003,6 +428,34 @@ export default function GeoHomePro() {
                   </div>
                 </div>
 
+                {/* User Affordability Check */}
+                {userProfile.annualIncome && userProfile.savings && (
+                  <div style={{ 
+                    background: selectedProperty.price <= (Number(userProfile.annualIncome) * 5 + Number(userProfile.savings)) ? '#e8f5e8' : '#ffeaa7',
+                    padding: '10px', 
+                    borderRadius: '6px', 
+                    marginBottom: '15px',
+                    border: `1px solid ${selectedProperty.price <= (Number(userProfile.annualIncome) * 5 + Number(userProfile.savings)) ? '#4CAF50' : '#f39c12'}`
+                  }}>
+                    <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '5px' }}>
+                      👤 Personal Affordability
+                    </div>
+                    <div style={{ fontSize: '11px' }}>
+                      Max affordable: RM {(Number(userProfile.annualIncome) * 5 + Number(userProfile.savings)).toLocaleString()}
+                    </div>
+                    <div style={{ 
+                      fontSize: '11px', 
+                      fontWeight: 'bold',
+                      color: selectedProperty.price <= (Number(userProfile.annualIncome) * 5 + Number(userProfile.savings)) ? '#27ae60' : '#e67e22'
+                    }}>
+                      {selectedProperty.price <= (Number(userProfile.annualIncome) * 5 + Number(userProfile.savings)) ? 
+                        '✅ Within your budget' : 
+                        `⚠️ Over budget by RM ${(selectedProperty.price - (Number(userProfile.annualIncome) * 5 + Number(userProfile.savings))).toLocaleString()}`
+                      }
+                    </div>
+                  </div>
+                )}
+
                 {/* Walk Score Display */}
                 <div style={{ marginBottom: '15px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
@@ -2163,7 +616,8 @@ export default function GeoHomePro() {
             <div style={{ fontSize: '48px', marginBottom: '20px' }}>🏠</div>
             <h2 style={{ margin: '0 0 15px 0', color: '#fff' }}>Welcome to GeoHome Pro</h2>
             <p style={{ margin: '0 0 20px 0', color: '#aaa', lineHeight: '1.5' }}>
-              Search for a location using the sidebar to discover properties, analyze market trends, and explore investment opportunities in that area.
+              Complete your profile and search for a location to discover personalized property recommendations, 
+              analyze market trends, and explore investment opportunities.
             </p>
             <div style={{ 
               background: '#00aaff', 
@@ -2171,13 +625,1889 @@ export default function GeoHomePro() {
               padding: '8px 16px', 
               borderRadius: '20px', 
               fontSize: '14px',
-              display: 'inline-block'
+              display: 'inline-block',
+              marginBottom: '15px'
             }}>
-              💡 Try searching for "Kuala Lumpur" or "KLCC"
+              💡 Try adding your age and income, then search for "Kuala Lumpur"
             </div>
+            {(!userProfile.age || !userProfile.annualIncome) && (
+              <div style={{ 
+                background: '#FFC107', 
+                color: '#333', 
+                padding: '8px 16px', 
+                borderRadius: '20px', 
+                fontSize: '12px',
+                display: 'inline-block'
+              }}>
+                👤 Complete your profile for personalized recommendations
+              </div>
+            )}
           </div>
         )}
       </div>
     </div>
   );
-}
+}import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import {
+  GoogleMap,
+  useLoadScript,
+  Marker,
+  InfoWindow,
+  Autocomplete,
+  DirectionsRenderer,
+  HeatmapLayer,
+  DrawingManager,
+  Polygon,
+} from '@react-google-maps/api';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Area, AreaChart } from 'recharts';
+
+const libraries = ['places', 'drawing', 'visualization'];
+const mapContainerStyle = { width: '100%', height: '100vh' };
+const defaultCenter = { lat: 3.139, lng: 101.6869 }; // Kuala Lumpur
+
+// Enhanced map style
+const mapStyle = [
+  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+  { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+  { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+  { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#263c3f" }] },
+  { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#6b9a76" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#38414e" }] },
+  { featureType: "road", elementType: "geometry.stroke", stylers: [{ color: "#212a37" }] },
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9ca5b3" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#746855" }] },
+  { featureType: "road.highway", elementType: "geometry.stroke", stylers: [{ color: "#1f2835" }] },
+  { featureType: "road.highway", elementType: "labels.text.fill", stylers: [{ color: "#f3d19c" }] },
+  { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2f3948" }] },
+  { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#d59563" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
+  { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#515c6d" }] },
+  { featureType: "water", elementType: "labels.text.stroke", stylers: [{ color: "#17263c" }] },
+];
+
+// Enhanced NumberInput Component - Simplified version inspired by your age input
+const NumberInput = ({ value, onChange, placeholder, className, type = "text" }) => {
+  const [displayValue, setDisplayValue] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const inputRef = useRef(null);
+  
+  // Update display value when external value changes (only when not focused)
+  useEffect(() => {
+    if (!isFocused) {
+      if (value === '' || value === null || value === undefined) {
+        setDisplayValue('');
+      } else {
+        // For simple numbers (like age), don't add commas
+        if (type === 'number') {
+          setDisplayValue(value.toString());
+        } else {
+          // For currency/large numbers, add comma formatting
+          const formatted = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+          setDisplayValue(formatted);
+        }
+      }
+    }
+  }, [value, isFocused, type]);
+
+  const handleChange = (e) => {
+    const inputValue = e.target.value;
+    
+    if (type === 'number') {
+      // Simple number input (like age) - only allow digits
+      const numericOnly = inputValue.replace(/\D/g, '');
+      setDisplayValue(numericOnly);
+      onChange(numericOnly);
+    } else {
+      // Currency/large number input with comma formatting
+      const cursorPosition = e.target.selectionStart;
+      
+      // Allow only digits and commas
+      const cleanValue = inputValue.replace(/[^\d,]/g, '');
+      
+      // Remove all commas and reformat
+      const numericOnly = cleanValue.replace(/,/g, '');
+      
+      // Update display value with formatting
+      const formatted = numericOnly === '' ? '' : numericOnly.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      setDisplayValue(formatted);
+      
+      // Pass the clean numeric value to parent
+      onChange(numericOnly);
+      
+      // Restore cursor position after formatting
+      requestAnimationFrame(() => {
+        if (inputRef.current && document.activeElement === inputRef.current) {
+          // Calculate new cursor position based on comma changes
+          const commasBeforeCursor = (inputValue.slice(0, cursorPosition).match(/,/g) || []).length;
+          const commasInFormatted = (formatted.slice(0, cursorPosition).match(/,/g) || []).length;
+          const adjustment = commasInFormatted - commasBeforeCursor;
+          const newPosition = Math.min(cursorPosition + adjustment, formatted.length);
+          
+          inputRef.current.setSelectionRange(newPosition, newPosition);
+        }
+      });
+    }
+  };
+
+  const handleFocus = () => {
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    setIsFocused(false);
+    // Reformat on blur to ensure consistency
+    if (value && type !== 'number') {
+      const formatted = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      setDisplayValue(formatted);
+    }
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={displayValue}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      placeholder={placeholder}
+      className={className}
+      autoComplete="off"
+    />
+  );
+};
+
+// User Profile Component - NEW
+const UserProfile = ({ userProfile, setUserProfile }) => {
+  const handleProfileChange = (field, value) => {
+    setUserProfile(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  return (
+    <div className="user-profile-section">
+      <h3 style={{ color: '#fff', fontSize: '16px', margin: '0 0 15px 0', fontWeight: 600 }}>
+        👤 Your Profile
+      </h3>
+      
+      <div style={{ marginBottom: '12px' }}>
+        <label className="label-text">Age</label>
+        <NumberInput
+          type="number"
+          value={userProfile.age}
+          onChange={(value) => handleProfileChange('age', value)}
+          placeholder="e.g., 35"
+          className="input-field"
+        />
+      </div>
+
+      <div style={{ marginBottom: '12px' }}>
+        <label className="label-text">Annual Income (RM)</label>
+        <NumberInput
+          value={userProfile.annualIncome}
+          onChange={(value) => handleProfileChange('annualIncome', value)}
+          placeholder="e.g., 120,000"
+          className="input-field"
+        />
+      </div>
+
+      <div style={{ marginBottom: '12px' }}>
+        <label className="label-text">Current Savings (RM)</label>
+        <NumberInput
+          value={userProfile.savings}
+          onChange={(value) => handleProfileChange('savings', value)}
+          placeholder="e.g., 200,000"
+          className="input-field"
+        />
+      </div>
+
+      <div style={{ marginBottom: '12px' }}>
+        <label className="label-text">Investment Goal</label>
+        <select
+          value={userProfile.investmentGoal}
+          onChange={e => handleProfileChange('investmentGoal', e.target.value)}
+          className="select-field"
+        >
+          <option value="">Select Goal</option>
+          <option value="rental_income">Rental Income</option>
+          <option value="capital_appreciation">Capital Appreciation</option>
+          <option value="own_residence">Own Residence</option>
+          <option value="mixed">Mixed Portfolio</option>
+        </select>
+      </div>
+
+      <div style={{ marginBottom: '12px' }}>
+        <label className="label-text">Risk Tolerance</label>
+        <select
+          value={userProfile.riskTolerance}
+          onChange={e => handleProfileChange('riskTolerance', e.target.value)}
+          className="select-field"
+        >
+          <option value="">Select Risk Level</option>
+          <option value="conservative">Conservative</option>
+          <option value="moderate">Moderate</option>
+          <option value="aggressive">Aggressive</option>
+        </select>
+      </div>
+
+      {userProfile.age && userProfile.annualIncome && (
+        <div style={{ 
+          background: '#1f2328', 
+          padding: '12px', 
+          borderRadius: '6px', 
+          marginTop: '15px',
+          border: '1px solid #444'
+        }}>
+          <div style={{ fontSize: '14px', color: '#00aaff', fontWeight: 'bold', marginBottom: '8px' }}>
+            📊 Profile Summary
+          </div>
+          <div style={{ fontSize: '12px', color: '#aaa', lineHeight: '1.6' }}>
+            <div>🎂 Age: {userProfile.age} years old</div>
+            {userProfile.annualIncome && (
+              <div>💰 Income: RM {Number(userProfile.annualIncome).toLocaleString()}/year</div>
+            )}
+            {userProfile.savings && (
+              <div>🏦 Savings: RM {Number(userProfile.savings).toLocaleString()}</div>
+            )}
+            {userProfile.investmentGoal && (
+              <div>🎯 Goal: {userProfile.investmentGoal.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
+            )}
+            {userProfile.riskTolerance && (
+              <div>⚖️ Risk: {userProfile.riskTolerance.charAt(0).toUpperCase() + userProfile.riskTolerance.slice(1)}</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Enhanced mock data generation
+const generateMockProperties = (searchLocation, userProfile = {}) => {
+  const propertyTypes = ['Condo', 'Landed House', 'Apartment', 'Townhouse', 'Villa'];
+  const schoolDistricts = ['Mont Kiara', 'KLCC', 'Bangsar', 'Sri Hartamas', 'Damansara'];
+  const features = ['pool', 'gym', 'parking', 'security', 'playground', 'garden'];
+  
+  // Generate properties around the searched location
+  const baseLatLng = searchLocation || defaultCenter;
+  
+  return Array.from({ length: 50 }, (_, i) => {
+    // Adjust price ranges based on user profile
+    let basePrice = Math.floor(Math.random() * 2000000) + 300000;
+    
+    // If user has income/savings info, suggest properties within their budget
+    if (userProfile.annualIncome && userProfile.savings) {
+      const maxAffordable = Number(userProfile.annualIncome) * 5 + Number(userProfile.savings || 0);
+      if (i < 15) { // First 15 properties should be more affordable
+        basePrice = Math.floor(Math.random() * maxAffordable * 0.8) + 300000;
+      }
+    }
+    
+    const size = Math.floor(Math.random() * 2000) + 800;
+    const monthlyRent = Math.floor(basePrice * 0.003 + Math.random() * 1000);
+    const yearBuilt = Math.floor(Math.random() * 30) + 1994;
+    const district = schoolDistricts[Math.floor(Math.random() * schoolDistricts.length)];
+    
+    return {
+      id: i + 1,
+      title: `Property ${i + 1}`,
+      lat: baseLatLng.lat + (Math.random() - 0.5) * 0.1,
+      lng: baseLatLng.lng + (Math.random() - 0.5) * 0.1,
+      price: basePrice,
+      size,
+      lotSize: Math.floor(Math.random() * 5000) + 1000,
+      yearBuilt,
+      propertyType: propertyTypes[Math.floor(Math.random() * propertyTypes.length)],
+      schoolDistrict: district,
+      features: features.slice(0, Math.floor(Math.random() * 4) + 2),
+      walkScore: Math.floor(Math.random() * 40) + 60,
+      priceHistory: generatePriceHistory(basePrice),
+      monthlyRent,
+      description: `Beautiful property in ${district} area.`,
+      imageUrl: `https://picsum.photos/300/200?random=${i}`,
+      // Analytics data
+      daysOnMarket: Math.floor(Math.random() * 180) + 10,
+      pricePerSqft: Math.floor(basePrice / size),
+      appreciation: (Math.random() - 0.3) * 20,
+      crimeScore: Math.floor(Math.random() * 40) + 30,
+      schoolRating: Math.floor(Math.random() * 3) + 7,
+      commuteScore: Math.floor(Math.random() * 40) + 60,
+      investmentGrade: ['A+', 'A', 'A-', 'B+', 'B', 'B-'][Math.floor(Math.random() * 6)]
+    };
+  });
+};
+
+const generatePriceHistory = (currentPrice) => {
+  const history = [];
+  let price = currentPrice * 0.8;
+  for (let i = 0; i < 24; i++) {
+    const month = new Date();
+    month.setMonth(month.getMonth() - (23 - i));
+    const variation = (Math.random() - 0.4) * 0.05;
+    price = Math.floor(price * (1 + variation));
+    history.push({
+      date: month.toISOString().slice(0, 7),
+      price: price,
+      month: month.toLocaleDateString('en-MY', { month: 'short', year: '2-digit' })
+    });
+  }
+  return history;
+};
+
+// Generate market analytics data
+const generateMarketAnalytics = () => {
+  const months = [];
+  const currentDate = new Date();
+  for (let i = 11; i >= 0; i--) {
+    const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+    months.push({
+      month: date.toLocaleDateString('en-MY', { month: 'short', year: '2-digit' }),
+      averagePrice: Math.floor(Math.random() * 200000) + 800000,
+      inventory: Math.floor(Math.random() * 500) + 200,
+      salesVolume: Math.floor(Math.random() * 150) + 50,
+      daysOnMarket: Math.floor(Math.random() * 30) + 45
+    });
+  }
+  return months;
+};
+
+const generateNeighborhoodData = () => {
+  const districts = ['Mont Kiara', 'KLCC', 'Bangsar', 'Sri Hartamas', 'Damansara'];
+  return districts.map(district => ({
+    name: district,
+    safetyScore: Math.floor(Math.random() * 30) + 70,
+    schoolScore: Math.floor(Math.random() * 30) + 70,
+    transportScore: Math.floor(Math.random() * 30) + 60,
+    amenitiesScore: Math.floor(Math.random() * 30) + 65,
+    overallScore: Math.floor(Math.random() * 20) + 75,
+    averagePrice: Math.floor(Math.random() * 500000) + 600000,
+    priceGrowth: (Math.random() * 15) + 2
+  }));
+};
+
+const marketData = generateMarketAnalytics();
+const neighborhoodData = generateNeighborhoodData();
+
+// Enhanced market trends data
+const generateMarketTrends = () => {
+  const areas = [
+    { name: 'Mont Kiara', center: { lat: 3.1724, lng: 101.6508 }, appreciation: 8.5 },
+    { name: 'KLCC', center: { lat: 3.1578, lng: 101.7123 }, appreciation: 12.3 },
+    { name: 'Bangsar', center: { lat: 3.1319, lng: 101.6740 }, appreciation: 6.7 },
+    { name: 'Sri Hartamas', center: { lat: 3.1685, lng: 101.6478 }, appreciation: 4.2 },
+    { name: 'Damansara', center: { lat: 3.1478, lng: 101.6388 }, appreciation: 7.9 }
+  ];
+  
+  return areas.map(area => ({
+    ...area,
+    bounds: [
+      { lat: area.center.lat + 0.02, lng: area.center.lng - 0.02 },
+      { lat: area.center.lat + 0.02, lng: area.center.lng + 0.02 },
+      { lat: area.center.lat - 0.02, lng: area.center.lng + 0.02 },
+      { lat: area.center.lat - 0.02, lng: area.center.lng - 0.02 }
+    ],
+    color: area.appreciation > 10 ? '#4CAF50' : area.appreciation > 5 ? '#FF9800' : '#F44336'
+  }));
+};
+
+export default function GeoHomePro() {
+  const { isLoaded, loadError } = useLoadScript({
+    googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY || 'demo-key',
+    libraries,
+  });
+
+  // Enhanced state management
+  const [mapCenter, setMapCenter] = useState(defaultCenter);
+  const [zoom, setZoom] = useState(12);
+  const [markerPosition, setMarkerPosition] = useState(defaultCenter);
+  const [searchLocation, setSearchLocation] = useState(null);
+  const [searchedLocationName, setSearchedLocationName] = useState('');
+  const [allProperties, setAllProperties] = useState([]);
+  const [directions, setDirections] = useState(null);
+  const [travelMode, setTravelMode] = useState('DRIVING');
+  const [distanceInfo, setDistanceInfo] = useState('');
+  const [nearbyPlaces, setNearbyPlaces] = useState([]);
+  const [placeType, setPlaceType] = useState('school');
+  const [heatmapData, setHeatmapData] = useState([]);
+  const [selectedProperty, setSelectedProperty] = useState(null);
+
+  // NEW: User Profile State
+  const [userProfile, setUserProfile] = useState({
+    age: '',
+    annualIncome: '',
+    savings: '',
+    investmentGoal: '',
+    riskTolerance: ''
+  });
+
+  // Enhanced property filters - Store as strings to avoid formatting issues
+  const [propertyFilters, setPropertyFilters] = useState({
+    minPrice: '',
+    maxPrice: '',
+    minSize: '',
+    maxSize: '',
+    minLotSize: '',
+    maxLotSize: '',
+    minYearBuilt: '',
+    maxYearBuilt: '',
+    propertyType: '',
+    schoolDistrict: '',
+    features: [],
+    minWalkScore: 60
+  });
+
+  // New state for enhanced features
+  const [showMarketTrends, setShowMarketTrends] = useState(false);
+  const [marketTrends] = useState(generateMarketTrends());
+
+  // New state for saved properties
+  const [savedProperties, setSavedProperties] = useState([]);
+
+  // Analytics Dashboard State
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [activeAnalyticsTab, setActiveAnalyticsTab] = useState('market');
+  const [investmentParams, setInvestmentParams] = useState({
+    downPayment: 20,
+    loanTerm: 30,
+    interestRate: 4.5,
+    monthlyExpenses: 500,
+    expectedAppreciation: 5
+  });
+
+  const mapRef = useRef(null);
+  const autocompleteRef = useRef(null);
+
+  // Simplified input change handlers
+  const handleFilterChange = (field, value) => {
+    setPropertyFilters(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleYearChange = (field, value) => {
+    // Allow only digits and limit to 4 characters for year fields
+    const numericValue = value.replace(/\D/g, '').slice(0, 4);
+    setPropertyFilters(prev => ({
+      ...prev,
+      [field]: numericValue
+    }));
+  };
+
+  // Enhanced filtering logic with user profile consideration
+  const filteredProperties = useMemo(() => {
+    if (!searchLocation || allProperties.length === 0) {
+      return [];
+    }
+    
+    let filtered = allProperties.filter(property => {
+      const minPrice = Number(propertyFilters.minPrice) || 0;
+      const maxPrice = Number(propertyFilters.maxPrice) || Infinity;
+      const minSize = Number(propertyFilters.minSize) || 0;
+      const maxSize = Number(propertyFilters.maxSize) || Infinity;
+      const minLotSize = Number(propertyFilters.minLotSize) || 0;
+      const maxLotSize = Number(propertyFilters.maxLotSize) || Infinity;
+      const minYearBuilt = Number(propertyFilters.minYearBuilt) || 1900;
+      const maxYearBuilt = Number(propertyFilters.maxYearBuilt) || new Date().getFullYear();
+
+      const priceMatch = property.price >= minPrice && property.price <= maxPrice;
+      const sizeMatch = property.size >= minSize && property.size <= maxSize;
+      const lotSizeMatch = property.lotSize >= minLotSize && property.lotSize <= maxLotSize;
+      const yearMatch = property.yearBuilt >= minYearBuilt && property.yearBuilt <= maxYearBuilt;
+      const typeMatch = !propertyFilters.propertyType || property.propertyType === propertyFilters.propertyType;
+      const districtMatch = !propertyFilters.schoolDistrict || property.schoolDistrict === propertyFilters.schoolDistrict;
+      const walkScoreMatch = property.walkScore >= propertyFilters.minWalkScore;
+      const featureMatch = propertyFilters.features.every(f => property.features?.includes(f));
+
+      return priceMatch && sizeMatch && lotSizeMatch && yearMatch && typeMatch && districtMatch && walkScoreMatch && featureMatch;
+    });
+
+    // Sort by affordability if user has profile info
+    if (userProfile.annualIncome && userProfile.savings) {
+      const maxAffordable = Number(userProfile.annualIncome) * 5 + Number(userProfile.savings || 0);
+      filtered = filtered.sort((a, b) => {
+        const aAffordability = Math.abs(a.price - maxAffordable * 0.6);
+        const bAffordability = Math.abs(b.price - maxAffordable * 0.6);
+        return aAffordability - bAffordability;
+      });
+    }
+    
+    return filtered;
+  }, [allProperties, propertyFilters, searchLocation, userProfile]);
+
+  // Enhanced property recommendation engine with user profile
+  const getPropertyRecommendations = useMemo(() => {
+    if (!searchLocation || filteredProperties.length === 0) {
+      return [];
+    }
+    
+    const userPreferences = {
+      avgPrice: filteredProperties.reduce((sum, p) => sum + p.price, 0) / filteredProperties.length || 1000000,
+      preferredDistricts: propertyFilters.schoolDistrict ? [propertyFilters.schoolDistrict] : [],
+      preferredFeatures: propertyFilters.features,
+      minWalkScore: propertyFilters.minWalkScore,
+      maxAffordable: userProfile.annualIncome && userProfile.savings ? 
+        Number(userProfile.annualIncome) * 5 + Number(userProfile.savings || 0) : Infinity
+    };
+
+    return allProperties
+      .map(property => {
+        let score = 0;
+        
+        // Affordability score (NEW - based on user profile)
+        if (userProfile.annualIncome && userProfile.savings) {
+          const affordabilityRatio = property.price / userPreferences.maxAffordable;
+          if (affordabilityRatio <= 0.8) {
+            score += 25; // Very affordable
+          } else if (affordabilityRatio <= 1.0) {
+            score += 15; // Affordable
+          } else {
+            score -= 10; // Over budget
+          }
+        }
+        
+        // Age-appropriate scoring (NEW)
+        if (userProfile.age) {
+          const age = Number(userProfile.age);
+          if (age < 30 && property.propertyType === 'Condo') score += 10;
+          if (age >= 30 && age < 45 && ['Townhouse', 'Landed House'].includes(property.propertyType)) score += 10;
+          if (age >= 45 && property.propertyType === 'Villa') score += 10;
+        }
+        
+        // Investment goal alignment (NEW)
+        if (userProfile.investmentGoal === 'rental_income') {
+          const grossYield = (property.monthlyRent * 12) / property.price * 100;
+          score += Math.min(grossYield * 3, 20);
+        } else if (userProfile.investmentGoal === 'capital_appreciation') {
+          score += Math.max(property.appreciation, 0) * 2;
+        }
+        
+        // Price similarity (closer to user's average preference)
+        const priceDiff = Math.abs(property.price - userPreferences.avgPrice) / userPreferences.avgPrice;
+        score += (1 - Math.min(priceDiff, 1)) * 20;
+        
+        // District preference
+        if (userPreferences.preferredDistricts.includes(property.schoolDistrict)) {
+          score += 15;
+        }
+        
+        // Feature matching
+        const matchingFeatures = property.features?.filter(f => userPreferences.preferredFeatures.includes(f)).length || 0;
+        score += (matchingFeatures / Math.max(userPreferences.preferredFeatures.length, 1)) * 15;
+        
+        // Walk score
+        score += (property.walkScore / 100) * 10;
+        
+        return { ...property, recommendationScore: Math.round(Math.max(score, 0)) };
+      })
+      .sort((a, b) => b.recommendationScore - a.recommendationScore)
+      .slice(0, 5);
+  }, [allProperties, filteredProperties, propertyFilters, searchLocation, userProfile]);
+
+  // Investment calculator (enhanced with user profile)
+  const calculateInvestmentMetrics = (property) => {
+    const price = property.price;
+    const monthlyRent = property.monthlyRent;
+    
+    // Use user's savings or default down payment percentage
+    const downPaymentPercent = userProfile.savings && Number(userProfile.savings) >= price * 0.1 ? 
+      Math.min((Number(userProfile.savings) / price) * 100, 50) : investmentParams.downPayment;
+    
+    const downPaymentAmount = price * (downPaymentPercent / 100);
+    const loanAmount = price - downPaymentAmount;
+    
+    // Monthly mortgage payment
+    const monthlyRate = investmentParams.interestRate / 100 / 12;
+    const numPayments = investmentParams.loanTerm * 12;
+    const monthlyPayment = loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / (Math.pow(1 + monthlyRate, numPayments) - 1);
+    
+    // Cash flow
+    const monthlyCashFlow = monthlyRent - monthlyPayment - investmentParams.monthlyExpenses;
+    const annualCashFlow = monthlyCashFlow * 12;
+    
+    // ROI calculations
+    const grossYield = (monthlyRent * 12) / price * 100;
+    const netYield = annualCashFlow / price * 100;
+    const cashOnCashReturn = annualCashFlow / downPaymentAmount * 100;
+    
+    // Future value with appreciation
+    const futureValue = price * Math.pow(1 + investmentParams.expectedAppreciation / 100, 10);
+    const totalReturn = (futureValue - price + annualCashFlow * 10) / downPaymentAmount * 100;
+
+    return {
+      downPaymentAmount,
+      downPaymentPercent,
+      monthlyPayment,
+      monthlyCashFlow,
+      annualCashFlow,
+      grossYield,
+      netYield,
+      cashOnCashReturn,
+      futureValue,
+      totalReturn
+    };
+  };
+
+  // Calculate neighborhood score
+  const calculateNeighborhoodScore = (property) => {
+    const district = neighborhoodData.find(d => d.name === property.schoolDistrict);
+    if (!district) return 0;
+    
+    const weights = {
+      safety: 0.3,
+      schools: 0.25,
+      transport: 0.2,
+      amenities: 0.15,
+      walkability: 0.1
+    };
+    
+    const score = 
+      district.safetyScore * weights.safety +
+      district.schoolScore * weights.schools +
+      district.transportScore * weights.transport +
+      district.amenitiesScore * weights.amenities +
+      property.walkScore * weights.walkability;
+    
+    return Math.round(score);
+  };
+
+  // Fetch nearby places when location or place type changes
+  useEffect(() => {
+    if (!mapRef.current || !markerPosition || !searchLocation) return;
+    
+    const service = new window.google.maps.places.PlacesService(mapRef.current);
+    service.nearbySearch(
+      { 
+        location: markerPosition, 
+        radius: 2000,
+        type: placeType 
+      },
+      (results, status) => {
+        if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+          const sortedResults = results
+            .filter(place => place.rating && place.rating >= 3.0)
+            .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+            .slice(0, 8);
+          
+          setNearbyPlaces(sortedResults);
+          const heatmapPoints = sortedResults.map(p => 
+            new window.google.maps.LatLng(p.geometry.location.lat(), p.geometry.location.lng())
+          );
+          setHeatmapData(heatmapPoints);
+        } else {
+          setNearbyPlaces([]);
+          setHeatmapData([]);
+        }
+      }
+    );
+  }, [markerPosition, placeType, searchLocation]);
+
+  // Event handlers
+  const onMapLoad = useCallback((map) => {
+    mapRef.current = map;
+  }, []);
+
+  const onPlaceChanged = () => {
+    const place = autocompleteRef.current.getPlace();
+    if (!place.geometry || !place.geometry.location) {
+      alert('Invalid location selected. Please choose from the dropdown.');
+      return;
+    }
+    const location = {
+      lat: place.geometry.location.lat(),
+      lng: place.geometry.location.lng(),
+    };
+    
+    // Set search location and generate properties with user profile consideration
+    setSearchLocation(location);
+    setSearchedLocationName(place.formatted_address || place.name || 'Selected Location');
+    setAllProperties(generateMockProperties(location, userProfile));
+    
+    setMapCenter(location);
+    setMarkerPosition(location);
+    setZoom(14);
+    setDirections(null);
+    setDistanceInfo('');
+  };
+
+  const getDirectionsToPlace = (destination) => {
+    if (!destination.geometry || !destination.geometry.location) return;
+    const destLatLng = {
+        lat: destination.geometry.location.lat(),
+        lng: destination.geometry.location.lng()
+    };
+    const service = new window.google.maps.DirectionsService();
+    service.route(
+      {
+        origin: markerPosition,
+        destination: destLatLng,
+        travelMode: window.google.maps.TravelMode[travelMode],
+      },
+      (result, status) => {
+        if (status === 'OK' && result) {
+          setDirections(result);
+          const leg = result.routes[0].legs[0];
+          setDistanceInfo(`${leg.distance?.text} (${leg.duration?.text})`);
+        } else {
+          setDirections(null);
+          setDistanceInfo('');
+          alert('Could not calculate directions.');
+        }
+      }
+    );
+  };
+
+  const handleFeatureToggle = (feature) => {
+    setPropertyFilters(prev => ({
+      ...prev,
+      features: prev.features.includes(feature)
+        ? prev.features.filter(f => f !== feature)
+        : [...prev.features, feature],
+    }));
+  };
+
+  // Property saving functions
+  const saveProperty = (property) => {
+    const isAlreadySaved = savedProperties.some(p => p.id === property.id);
+    if (isAlreadySaved) {
+      setSavedProperties(prev => prev.filter(p => p.id !== property.id));
+      alert('Property removed from saved list');
+    } else {
+      setSavedProperties(prev => [...prev, { ...property, savedAt: new Date().toISOString() }]);
+      alert('Property saved successfully!');
+    }
+  };
+
+  const isPropertySaved = (propertyId) => {
+    return savedProperties.some(p => p.id === propertyId);
+  };
+
+  const removeSavedProperty = (propertyId) => {
+    setSavedProperties(prev => prev.filter(p => p.id !== propertyId));
+  };
+
+  const getWalkScoreColor = (score) => {
+    if (score >= 90) return '#00C853';
+    if (score >= 70) return '#64DD17';
+    if (score >= 50) return '#FFC107';
+    if (score >= 25) return '#FF9800';
+    return '#F44336';
+  };
+
+  const getWalkScoreLabel = (score) => {
+    if (score >= 90) return 'Walker\'s Paradise';
+    if (score >= 70) return 'Very Walkable';
+    if (score >= 50) return 'Somewhat Walkable';
+    if (score >= 25) return 'Car-Dependent';
+    return 'Car-Dependent';
+  };
+
+  const getGradeColor = (grade) => {
+    const colors = {
+      'A+': '#4CAF50', 'A': '#66BB6A', 'A-': '#81C784',
+      'B+': '#FFB74D', 'B': '#FFA726', 'B-': '#FF9800'
+    };
+    return colors[grade] || '#9E9E9E';
+  };
+
+  // UI Components
+  const Section = ({ title, icon, children, defaultOpen = false }) => (
+    <details open={defaultOpen} className="sidebar-section">
+      <summary>
+        {icon}
+        <span style={{ fontWeight: 600 }}>{title}</span>
+        <div className="chevron">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </div>
+      </summary>
+      <div className="sidebar-section-content">{children}</div>
+    </details>
+  );
+
+  const icons = {
+    search: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
+    filters: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.46L22 3z"></path></svg>,
+    routes: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="5" x2="6" y2="17"></line><polyline points="14 5 18 5 18 9"></polyline><line x1="6" y1="7" x2="18" y2="19"></line><polyline points="10 19 6 19 6 15"></polyline></svg>,
+    trends: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>,
+    heart: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>,
+    analytics: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>,
+    recommendation: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4"></path><path d="M21 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path><path d="M3 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path><path d="M12 21c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path><path d="M12 3c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path></svg>,
+    user: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+  };
+
+  // Analytics Dashboard Components
+  const AnalyticsModal = () => {
+    if (!showAnalytics) return null;
+
+    const COLORS = ['#00aaff', '#4CAF50', '#FF9800', '#F44336', '#9C27B0', '#795548'];
+
+    const propertyTypeData = filteredProperties.reduce((acc, property) => {
+      acc[property.propertyType] = (acc[property.propertyType] || 0) + 1;
+      return acc;
+    }, {});
+
+    const pieData = Object.entries(propertyTypeData).map(([type, count]) => ({
+      name: type,
+      value: count
+    }));
+
+    const priceRangeData = [
+      { range: '0-500K', count: filteredProperties.filter(p => p.price < 500000).length },
+      { range: '500K-1M', count: filteredProperties.filter(p => p.price >= 500000 && p.price < 1000000).length },
+      { range: '1M-1.5M', count: filteredProperties.filter(p => p.price >= 1000000 && p.price < 1500000).length },
+      { range: '1.5M+', count: filteredProperties.filter(p => p.price >= 1500000).length }
+    ];
+
+    return (
+      <div className="modal-overlay" onClick={() => setShowAnalytics(false)}>
+        <div className="analytics-modal" onClick={e => e.stopPropagation()}>
+          <div className="analytics-header">
+            <h2>📊 Analytics Dashboard</h2>
+            <button onClick={() => setShowAnalytics(false)} className="close-btn">✕</button>
+          </div>
+          
+          <div className="analytics-tabs">
+            <button 
+              className={`tab-btn ${activeAnalyticsTab === 'market' ? 'active' : ''}`}
+              onClick={() => setActiveAnalyticsTab('market')}
+            >
+              📈 Market Analytics
+            </button>
+            <button 
+              className={`tab-btn ${activeAnalyticsTab === 'investment' ? 'active' : ''}`}
+              onClick={() => setActiveAnalyticsTab('investment')}
+            >
+              💰 Investment Analysis
+            </button>
+            <button 
+              className={`tab-btn ${activeAnalyticsTab === 'neighborhood' ? 'active' : ''}`}
+              onClick={() => setActiveAnalyticsTab('neighborhood')}
+            >
+              🏘️ Neighborhood Scores
+            </button>
+            <button 
+              className={`tab-btn ${activeAnalyticsTab === 'recommendations' ? 'active' : ''}`}
+              onClick={() => setActiveAnalyticsTab('recommendations')}
+            >
+              🎯 Recommendations
+            </button>
+          </div>
+
+          <div className="analytics-content">
+            {!searchLocation ? (
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: 'column', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                height: '300px',
+                textAlign: 'center',
+                color: '#aaa'
+              }}>
+                <div style={{ fontSize: '48px', marginBottom: '20px' }}>🔍</div>
+                <h3 style={{ color: '#fff', marginBottom: '10px' }}>No Location Selected</h3>
+                <p>Please search for a location first to view analytics and property data.</p>
+              </div>
+            ) : activeAnalyticsTab === 'market' && (
+              <div className="analytics-grid">
+                <div className="chart-container">
+                  <h3>Market Price Trends (12 Months)</h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <LineChart data={marketData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                      <XAxis dataKey="month" stroke="#aaa" />
+                      <YAxis stroke="#aaa" tickFormatter={(value) => `RM${(value/1000).toFixed(0)}K`} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#2c3038', border: '1px solid #444', borderRadius: '6px' }}
+                        labelStyle={{ color: '#fff' }}
+                        formatter={(value) => [`RM${value.toLocaleString()}`, 'Average Price']}
+                      />
+                      <Line type="monotone" dataKey="averagePrice" stroke="#00aaff" strokeWidth={3} dot={{ fill: '#00aaff', strokeWidth: 2, r: 4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="chart-container">
+                  <h3>Property Type Distribution</h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {pieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#2c3038', border: '1px solid #444', borderRadius: '6px' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="chart-container">
+                  <h3>Price Range Analysis</h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={priceRangeData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                      <XAxis dataKey="range" stroke="#aaa" />
+                      <YAxis stroke="#aaa" />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#2c3038', border: '1px solid #444', borderRadius: '6px' }}
+                        labelStyle={{ color: '#fff' }}
+                      />
+                      <Bar dataKey="count" fill="#4CAF50" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="chart-container">
+                  <h3>Market Metrics</h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <AreaChart data={marketData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#444" />
+                      <XAxis dataKey="month" stroke="#aaa" />
+                      <YAxis stroke="#aaa" />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#2c3038', border: '1px solid #444', borderRadius: '6px' }}
+                        labelStyle={{ color: '#fff' }}
+                      />
+                      <Area type="monotone" dataKey="inventory" stackId="1" stroke="#FF9800" fill="#FF9800" fillOpacity={0.6} />
+                      <Area type="monotone" dataKey="salesVolume" stackId="2" stroke="#4CAF50" fill="#4CAF50" fillOpacity={0.6} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {activeAnalyticsTab === 'investment' && searchLocation && (
+              <div className="investment-analysis">
+                <div className="investment-params">
+                  <h3>Investment Parameters</h3>
+                  {userProfile.savings && (
+                    <div style={{ 
+                      background: '#1f2328', 
+                      padding: '12px', 
+                      borderRadius: '6px', 
+                      marginBottom: '15px',
+                      border: '1px solid #444'
+                    }}>
+                      <div style={{ fontSize: '14px', color: '#00aaff', fontWeight: 'bold', marginBottom: '5px' }}>
+                        👤 Your Profile Integration
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#aaa' }}>
+                        Available savings: RM {Number(userProfile.savings).toLocaleString()}
+                        {userProfile.annualIncome && (
+                          <div>Max affordable (5x income + savings): RM {(Number(userProfile.annualIncome) * 5 + Number(userProfile.savings)).toLocaleString()}</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <div className="params-grid">
+                    <div>
+                      <label>Down Payment (%)</label>
+                      <input
+                        type="number"
+                        value={investmentParams.downPayment}
+                        onChange={e => setInvestmentParams(prev => ({...prev, downPayment: parseFloat(e.target.value) || 0}))}
+                        className="param-input"
+                      />
+                    </div>
+                    <div>
+                      <label>Loan Term (years)</label>
+                      <input
+                        type="number"
+                        value={investmentParams.loanTerm}
+                        onChange={e => setInvestmentParams(prev => ({...prev, loanTerm: parseFloat(e.target.value) || 0}))}
+                        className="param-input"
+                      />
+                    </div>
+                    <div>
+                      <label>Interest Rate (%)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={investmentParams.interestRate}
+                        onChange={e => setInvestmentParams(prev => ({...prev, interestRate: parseFloat(e.target.value) || 0}))}
+                        className="param-input"
+                      />
+                    </div>
+                    <div>
+                      <label>Monthly Expenses (RM)</label>
+                      <input
+                        type="number"
+                        value={investmentParams.monthlyExpenses}
+                        onChange={e => setInvestmentParams(prev => ({...prev, monthlyExpenses: parseFloat(e.target.value) || 0}))}
+                        className="param-input"
+                      />
+                    </div>
+                    <div>
+                      <label>Expected Appreciation (%)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={investmentParams.expectedAppreciation}
+                        onChange={e => setInvestmentParams(prev => ({...prev, expectedAppreciation: parseFloat(e.target.value) || 0}))}
+                        className="param-input"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="investment-results">
+                  <h3>Top Investment Opportunities</h3>
+                  <div className="investment-cards">
+                    {filteredProperties.slice(0, 3).map(property => {
+                      const metrics = calculateInvestmentMetrics(property);
+                      const isAffordable = !userProfile.annualIncome || !userProfile.savings || 
+                        property.price <= (Number(userProfile.annualIncome) * 5 + Number(userProfile.savings || 0));
+                      
+                      return (
+                        <div key={property.id} className="investment-card" style={{
+                          border: isAffordable ? '1px solid #4CAF50' : '1px solid #444'
+                        }}>
+                          <div className="investment-header">
+                            <h4>{property.title}</h4>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              {isAffordable && (
+                                <div style={{ 
+                                  background: '#4CAF50', 
+                                  color: 'white', 
+                                  padding: '2px 6px', 
+                                  borderRadius: '3px', 
+                                  fontSize: '10px', 
+                                  fontWeight: 'bold' 
+                                }}>
+                                  AFFORDABLE
+                                </div>
+                              )}
+                              <div className="investment-grade" style={{ background: getGradeColor(property.investmentGrade) }}>
+                                {property.investmentGrade}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="investment-metrics">
+                            <div className="metric">
+                              <span className="metric-label">Property Price</span>
+                              <span className="metric-value">RM {property.price.toLocaleString()}</span>
+                            </div>
+                            <div className="metric">
+                              <span className="metric-label">Down Payment ({metrics.downPaymentPercent.toFixed(1)}%)</span>
+                              <span className="metric-value">RM {metrics.downPaymentAmount.toLocaleString()}</span>
+                            </div>
+                            <div className="metric">
+                              <span className="metric-label">Monthly Cash Flow</span>
+                              <span className={`metric-value ${metrics.monthlyCashFlow >= 0 ? 'positive' : 'negative'}`}>
+                                RM {metrics.monthlyCashFlow.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="metric">
+                              <span className="metric-label">Gross Yield</span>
+                              <span className="metric-value">{metrics.grossYield.toFixed(2)}%</span>
+                            </div>
+                            <div className="metric">
+                              <span className="metric-label">Cash-on-Cash Return</span>
+                              <span className={`metric-value ${metrics.cashOnCashReturn >= 0 ? 'positive' : 'negative'}`}>
+                                {metrics.cashOnCashReturn.toFixed(2)}%
+                              </span>
+                            </div>
+                            <div className="metric">
+                              <span className="metric-label">10-Year Total Return</span>
+                              <span className="metric-value">{metrics.totalReturn.toFixed(1)}%</span>
+                            </div>
+                          </div>
+                          
+                          <button 
+                            onClick={() => {
+                              setSelectedProperty(property);
+                              setMapCenter({lat: property.lat, lng: property.lng});
+                              setZoom(16);
+                              setShowAnalytics(false);
+                            }}
+                            className="view-property-btn"
+                          >
+                            View Property
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeAnalyticsTab === 'neighborhood' && searchLocation && (
+              <div className="neighborhood-analysis">
+                <h3>Neighborhood Comparison</h3>
+                <div className="neighborhood-cards">
+                  {neighborhoodData.map(district => (
+                    <div key={district.name} className="neighborhood-card">
+                      <div className="neighborhood-header">
+                        <h4>{district.name}</h4>
+                        <div className="overall-score">
+                          <span className="score-value">{district.overallScore}</span>
+                          <span className="score-label">/100</span>
+                        </div>
+                      </div>
+                      
+                      <div className="score-breakdown">
+                        <div className="score-item">
+                          <span>🛡️ Safety</span>
+                          <div className="score-bar">
+                            <div className="score-fill" style={{ width: `${district.safetyScore}%`, backgroundColor: '#4CAF50' }}></div>
+                            <span className="score-text">{district.safetyScore}</span>
+                          </div>
+                        </div>
+                        <div className="score-item">
+                          <span>🎓 Schools</span>
+                          <div className="score-bar">
+                            <div className="score-fill" style={{ width: `${district.schoolScore}%`, backgroundColor: '#2196F3' }}></div>
+                            <span className="score-text">{district.schoolScore}</span>
+                          </div>
+                        </div>
+                        <div className="score-item">
+                          <span>🚇 Transport</span>
+                          <div className="score-bar">
+                            <div className="score-fill" style={{ width: `${district.transportScore}%`, backgroundColor: '#FF9800' }}></div>
+                            <span className="score-text">{district.transportScore}</span>
+                          </div>
+                        </div>
+                        <div className="score-item">
+                          <span>🏪 Amenities</span>
+                          <div className="score-bar">
+                            <div className="score-fill" style={{ width: `${district.amenitiesScore}%`, backgroundColor: '#9C27B0' }}></div>
+                            <span className="score-text">{district.amenitiesScore}</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="neighborhood-stats">
+                        <div className="stat">
+                          <span className="stat-label">Avg Price</span>
+                          <span className="stat-value">RM {(district.averagePrice / 1000).toFixed(0)}K</span>
+                        </div>
+                        <div className="stat">
+                          <span className="stat-label">Growth</span>
+                          <span className="stat-value positive">+{district.priceGrowth.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeAnalyticsTab === 'recommendations' && searchLocation && (
+              <div className="recommendations-analysis">
+                <h3>🎯 Property Recommendations Based on Your Preferences</h3>
+                <div className="recommendation-explanation">
+                  <p>These recommendations consider your search criteria, preferred features, investment potential, and personal profile:</p>
+                  {userProfile.age && userProfile.annualIncome && (
+                    <div style={{ marginTop: '10px', fontSize: '12px', color: '#00aaff' }}>
+                      💡 Personalized for: {userProfile.age} year old with RM {Number(userProfile.annualIncome).toLocaleString()}/year income
+                    </div>
+                  )}
+                </div>
+                
+                <div className="recommendations-list">
+                  {getPropertyRecommendations.map((property, index) => {
+                    const neighborhoodScore = calculateNeighborhoodScore(property);
+                    const metrics = calculateInvestmentMetrics(property);
+                    const isAffordable = !userProfile.annualIncome || !userProfile.savings || 
+                      property.price <= (Number(userProfile.annualIncome) * 5 + Number(userProfile.savings || 0));
+                    
+                    return (
+                      <div key={property.id} className="recommendation-card" style={{
+                        border: isAffordable ? '2px solid #4CAF50' : '1px solid #444'
+                      }}>
+                        <div className="recommendation-rank">#{index + 1}</div>
+                        
+                        <div className="recommendation-content">
+                          <div className="recommendation-header">
+                            <h4>{property.title}</h4>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              {isAffordable && (
+                                <div style={{ 
+                                  background: '#4CAF50', 
+                                  color: 'white', 
+                                  padding: '2px 6px', 
+                                  borderRadius: '3px', 
+                                  fontSize: '10px', 
+                                  fontWeight: 'bold' 
+                                }}>
+                                  WITHIN BUDGET
+                                </div>
+                              )}
+                              <div className="recommendation-score">
+                                <span className="score-value">{property.recommendationScore}</span>
+                                <span className="score-label">/100</span>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="recommendation-details">
+                            <div className="detail-row">
+                              <span>💰 Price:</span>
+                              <span>RM {property.price.toLocaleString()}</span>
+                            </div>
+                            <div className="detail-row">
+                              <span>📐 Size:</span>
+                              <span>{property.size} sqft</span>
+                            </div>
+                            <div className="detail-row">
+                              <span>🏷️ Type:</span>
+                              <span>{property.propertyType}</span>
+                            </div>
+                            <div className="detail-row">
+                              <span>📍 District:</span>
+                              <span>{property.schoolDistrict}</span>
+                            </div>
+                            <div className="detail-row">
+                              <span>🚶 Walk Score:</span>
+                              <span style={{ color: getWalkScoreColor(property.walkScore) }}>{property.walkScore}/100</span>
+                            </div>
+                            <div className="detail-row">
+                              <span>🏘️ Neighborhood:</span>
+                              <span>{neighborhoodScore}/100</span>
+                            </div>
+                            <div className="detail-row">
+                              <span>💹 Gross Yield:</span>
+                              <span className={metrics.grossYield >= 5 ? 'positive' : ''}>{metrics.grossYield.toFixed(2)}%</span>
+                            </div>
+                            <div className="detail-row">
+                              <span>⭐ Investment Grade:</span>
+                              <span className="investment-grade-small" style={{ background: getGradeColor(property.investmentGrade) }}>
+                                {property.investmentGrade}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="recommendation-features">
+                            <strong>Features:</strong>
+                            <div className="features-list">
+                              {property.features?.map(feature => (
+                                <span key={feature} className="feature-tag">
+                                  {feature}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          
+                          <div className="recommendation-actions">
+                            <button 
+                              onClick={() => {
+                                setSelectedProperty(property);
+                                setMapCenter({lat: property.lat, lng: property.lng});
+                                setZoom(16);
+                                setShowAnalytics(false);
+                              }}
+                              className="primary-btn"
+                            >
+                              📍 View on Map
+                            </button>
+                            <button 
+                              onClick={() => saveProperty(property)}
+                              className={`save-btn ${isPropertySaved(property.id) ? 'saved' : ''}`}
+                            >
+                              {isPropertySaved(property.id) ? '❤️ Saved' : '🤍 Save'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const css = `
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    .sidebar-container { scrollbar-width: thin; scrollbar-color: #555 #2c3038; }
+    .sidebar-container::-webkit-scrollbar { width: 8px; }
+    .sidebar-container::-webkit-scrollbar-track { background: #2c3038; }
+    .sidebar-container::-webkit-scrollbar-thumb { background-color: #555; border-radius: 6px; border: 2px solid #2c3038; }
+    .sidebar-section { background: #2c3038; border-radius: 8px; overflow: hidden; margin-bottom: 15px; }
+    .sidebar-section summary { display: flex; align-items: center; gap: 10px; padding: 15px; cursor: pointer; list-style: none; font-size: 16px; color: #fff; }
+    .sidebar-section summary::-webkit-details-marker { display: none; }
+    .sidebar-section .chevron { margin-left: auto; transition: transform 0.2s; }
+    .sidebar-section[open] .chevron { transform: rotate(180deg); }
+    .sidebar-section-content { padding: 0 15px 15px 15px; border-top: 1px solid #444; }
+    .input-field, .select-field { width: 100%; background: #1f2328; color: #e0e0e0; border: 1px solid #444; border-radius: 6px; padding: 10px; font-size: 14px; outline: none; transition: border-color 0.2s; box-sizing: border-box; }
+    .input-field:focus, .select-field:focus { border-color: #00aaff; }
+    .input-field::placeholder { color: #888; }
+    .saved-property-item { background: #1f2328; padding: 12px; border-radius: 6px; margin-bottom: 8px; border: 1px solid #333; }
+    .property-actions { display: flex; gap: 8px; margin-top: 8px; }
+    .save-btn { background: #4CAF50; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; transition: background 0.2s; }
+    .save-btn:hover { background: #45a049; }
+    .save-btn.saved { background: #FF9800; }
+    .save-btn.saved:hover { background: #f57c00; }
+    .property-price { color: #00aaff; font-weight: bold; font-size: 14px; }
+    .primary-btn { display: flex; justify-content: center; align-items: center; gap: 8px; width: 100%; background: #00aaff; color: white; padding: 10px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+    .primary-btn:hover { background: #0095e0; }
+    .secondary-btn { display: flex; justify-content: center; align-items: center; gap: 8px; width: 100%; background: #404652; color: white; padding: 10px; border-radius: 6px; border: none; font-weight: 500; cursor: pointer; transition: background 0.2s; }
+    .secondary-btn:hover { background: #505866; }
+    .label-text { font-size: 14px; font-weight: 500; color: #aaa; display: block; margin-bottom: 8px; margin-top: 12px; }
+    .filter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .walkability-bar { height: 8px; border-radius: 4px; margin: 5px 0; position: relative; overflow: hidden; }
+    .walkability-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-content { background: #2c3038; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; color: white; }
+    .delete-btn { background: #f44336; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; margin-left: 8px; }
+    .close-btn { background: #f44336; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+    
+    /* User Profile Styles */
+    .user-profile-section { background: #2c3038; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+    
+    /* Analytics Modal Styles */
+    .analytics-modal { 
+      background: #1f2328; 
+      width: 95vw; 
+      height: 90vh; 
+      border-radius: 12px; 
+      display: flex; 
+      flex-direction: column; 
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+    .analytics-header { 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+      padding: 20px 25px; 
+      border-bottom: 1px solid #444; 
+      background: #2c3038;
+    }
+    .analytics-header h2 { margin: 0; color: #fff; fontsize: 24px; }
+    .analytics-tabs { 
+      display: flex; 
+      background: #2c3038; 
+      border-bottom: 1px solid #444; 
+      overflow-x: auto;
+    }
+    .tab-btn { 
+      background: transparent; 
+      color: #aaa; 
+      border: none; 
+      padding: 15px 20px; 
+      cursor: pointer; 
+      transition: all 0.2s; 
+      white-space: nowrap;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .tab-btn:hover { color: #fff; background: #404652; }
+    .tab-btn.active { color: #00aaff; background: #1f2328; border-bottom: 2px solid #00aaff; }
+    .analytics-content { 
+      flex: 1; 
+      padding: 25px; 
+      overflow-y: auto; 
+      background: #1f2328;
+    }
+    .analytics-grid { 
+      display: grid; 
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); 
+      gap: 20px; 
+    }
+    .chart-container { 
+      background: #2c3038; 
+      padding: 20px; 
+      border-radius: 8px; 
+      border: 1px solid #444;
+    }
+    .chart-container h3 { 
+      margin: 0 0 15px 0; 
+      color: #fff; 
+      font-size: 16px;
+      font-weight: 600;
+    }
+    
+    /* Investment Analysis Styles */
+    .investment-analysis { display: flex; flex-direction: column; gap: 25px; }
+    .investment-params { background: #2c3038; padding: 20px; border-radius: 8px; border: 1px solid #444; }
+    .investment-params h3 { margin: 0 0 15px 0; color: #fff; }
+    .params-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+    .params-grid label { display: block; font-size: 14px; color: #aaa; margin-bottom: 5px; }
+    .param-input { width: 100%; background: #1f2328; color: #e0e0e0; border: 1px solid #444; border-radius: 4px; padding: 8px; }
+    .investment-results h3 { color: #fff; margin-bottom: 15px; }
+    .investment-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+    .investment-card { background: #2c3038; padding: 20px; border-radius: 8px; border: 1px solid #444; }
+    .investment-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .investment-header h4 { margin: 0; color: #fff; }
+    .investment-grade { color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; }
+    .investment-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+    .metric { display: flex; justify-content: space-between; padding: 8px; background: #1f2328; border-radius: 4px; }
+    .metric-label { color: #aaa; font-size: 12px; }
+    .metric-value { color: #fff; font-weight: bold; font-size: 12px; }
+    .metric-value.positive { color: #4CAF50; }
+    .metric-value.negative { color: #f44336; }
+    .view-property-btn { width: 100%; background: #00aaff; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; }
+    
+    /* Neighborhood Analysis Styles */
+    .neighborhood-analysis h3 { color: #fff; margin-bottom: 20px; }
+    .neighborhood-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+    .neighborhood-card { background: #2c3038; padding: 20px; border-radius: 8px; border: 1px solid #444; }
+    .neighborhood-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .neighborhood-header h4 { margin: 0; color: #fff; }
+    .overall-score { text-align: center; }
+    .score-value { font-size: 24px; font-weight: bold; color: #00aaff; }
+    .score-label { font-size: 14px; color: #aaa; }
+    .score-breakdown { margin-bottom: 15px; }
+    .score-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .score-item span:first-child { color: #e0e0e0; font-size: 14px; min-width: 100px; }
+    .score-bar { flex: 1; height: 20px; background: #1f2328; border-radius: 10px; margin: 0 10px; position: relative; overflow: hidden; }
+    .score-fill { height: 100%; border-radius: 10px; transition: width 0.3s ease; }
+    .score-text { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); color: #fff; font-size: 12px; font-weight: bold; }
+    .neighborhood-stats { display: flex; justify-content: space-between; padding-top: 15px; border-top: 1px solid #444; }
+    .stat { text-align: center; }
+    .stat-label { display: block; color: #aaa; font-size: 12px; }
+    .stat-value { color: #fff; font-weight: bold; }
+    .stat-value.positive { color: #4CAF50; }
+    
+    /* Recommendations Styles */
+    .recommendations-analysis h3 { color: #fff; margin-bottom: 15px; }
+    .recommendation-explanation { background: #2c3038; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #444; }
+    .recommendation-explanation p { margin: 0; color: #aaa; font-size: 14px; }
+    .recommendations-list { display: flex; flex-direction: column; gap: 15px; }
+    .recommendation-card { background: #2c3038; padding: 20px; border-radius: 8px; border: 1px solid #444; display: flex; gap: 15px; }
+    .recommendation-rank { 
+      background: linear-gradient(135deg, #00aaff, #0095e0); 
+      color: white; 
+      width: 40px; 
+      height: 40px; 
+      border-radius: 50%; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      font-weight: bold; 
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .recommendation-content { flex: 1; }
+    .recommendation-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .recommendation-header h4 { margin: 0; color: #fff; }
+    .recommendation-score { text-align: center; }
+    .recommendation-details { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+    .detail-row { display: flex; justify-content: space-between; padding: 6px; background: #1f2328; border-radius: 4px; }
+    .detail-row span:first-child { color: #aaa; font-size: 13px; }
+    .detail-row span:last-child { color: #fff; font-weight: 500; font-size: 13px; }
+    .detail-row .positive { color: #4CAF50; }
+    .investment-grade-small { padding: 2px 6px; border-radius: 3px; font-size: 11px; font-weight: bold; color: white; }
+    .recommendation-features { margin-bottom: 15px; }
+    .recommendation-features strong { color: #fff; font-size: 13px; }
+    .features-list { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; }
+    .feature-tag { background: #404652; color: #e0e0e0; padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+    .recommendation-actions { display: flex; gap: 10px; }
+    .recommendation-actions .primary-btn, .recommendation-actions .save-btn { 
+      flex: 1; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      gap: 5px; 
+      padding: 8px 12px; 
+      font-size: 12px;
+    }
+    
+    /* No Search State Styles */
+    .no-search-message {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+      background: #2c3038;
+      border-radius: 8px;
+      border: 1px dashed #444;
+      color: #aaa;
+    }
+    .no-search-message .icon {
+      font-size: 48px;
+      margin-bottom: 20px;
+      opacity: 0.7;
+    }
+    .no-search-message h3 {
+      color: #fff;
+      margin: 0 0 10px 0;
+      font-size: 18px;
+    }
+    .no-search-message p {
+      margin: 0;
+      font-size: 14px;
+      max-width: 300px;
+      line-height: 1.5;
+    }
+  `;
+
+  if (loadError) return <div style={{color: 'white', padding: '20px'}}>Error loading maps</div>;
+  if (!isLoaded) return <div style={{color: 'white', padding: '20px'}}>Loading Maps...</div>;
+
+  return (
+    <div style={{ display: 'flex', background: '#1f2328' }}>
+      <style>{css}</style>
+      
+      {/* Analytics Modal */}
+      <AnalyticsModal />
+      
+      {/* Sidebar */}
+      <div className="sidebar-container" style={{ width: 400, height: '100vh', overflowY: 'auto', background: '#1f2328', padding: '20px', fontFamily: "'Inter', sans-serif" }}>
+        
+        <div style={{ marginBottom: '25px' }}>
+          <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff', margin: 0 }}>GeoHome Pro</h1>
+          <p style={{ fontSize: '14px', color: '#888', marginTop: '5px' }}>Enhanced Real Estate & Market Analysis</p>
+          {searchedLocationName && (
+            <div style={{ 
+              background: '#00aaff', 
+              color: 'white', 
+              padding: '8px 12px', 
+              borderRadius: '6px', 
+              fontSize: '12px', 
+              marginTop: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <span>📍</span>
+              <span>Searching in: {searchedLocationName}</span>
+            </div>
+          )}
+        </div>
+
+        {/* User Profile Section - NEW */}
+        <div className="user-profile-section">
+          <UserProfile userProfile={userProfile} setUserProfile={setUserProfile} />
+        </div>
+        
+        {/* Analytics Dashboard Button */}
+        <button 
+          onClick={() => setShowAnalytics(true)}
+          className="primary-btn"
+          style={{ marginBottom: '20px' }}
+        >
+          {icons.analytics} Analytics Dashboard
+        </button>
+        
+        {/* Location Search */}
+        <div style={{ background: '#2c3038', borderRadius: '8px', padding: '15px', marginBottom: '20px' }}>
+          <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '0 0 15px 0', fontSize: '16px', color: '#fff', fontWeight: 600 }}>
+            {icons.search} Location Search
+          </h2>
+          <Autocomplete onLoad={ac => (autocompleteRef.current = ac)} onPlaceChanged={onPlaceChanged}>
+            <input type="text" placeholder="Search for a location (e.g., Kuala Lumpur)..." className="input-field" />
+          </Autocomplete>
+          
+          {!searchLocation && (
+            <div style={{ 
+              marginTop: '15px', 
+              padding: '12px', 
+              background: '#1f2328', 
+              borderRadius: '6px', 
+              border: '1px solid #444',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔍</div>
+              <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>
+                Enter a location to discover properties and market insights
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Enhanced Property Filters - Only show if location searched */}
+        {searchLocation ? (
+          <Section title="Advanced Property Filters" icon={icons.filters} defaultOpen>
+            <label className="label-text">Price Range (RM)</label>
+            <div className="filter-grid">
+              <NumberInput
+                value={propertyFilters.minPrice}
+                onChange={(value) => handleFilterChange('minPrice', value)}
+                placeholder="Min Price"
+                className="input-field"
+              />
+              <NumberInput
+                value={propertyFilters.maxPrice}
+                onChange={(value) => handleFilterChange('maxPrice', value)}
+                placeholder="Max Price"
+                className="input-field"
+              />
+            </div>
+
+            <label className="label-text">Size (sqft)</label>
+            <div className="filter-grid">
+              <NumberInput
+                value={propertyFilters.minSize}
+                onChange={(value) => handleFilterChange('minSize', value)}
+                placeholder="Min Size"
+                className="input-field"
+              />
+              <NumberInput
+                value={propertyFilters.maxSize}
+                onChange={(value) => handleFilterChange('maxSize', value)}
+                placeholder="Max Size"
+                className="input-field"
+              />
+            </div>
+
+            <label className="label-text">Lot Size (sqft)</label>
+            <div className="filter-grid">
+              <NumberInput
+                value={propertyFilters.minLotSize}
+                onChange={(value) => handleFilterChange('minLotSize', value)}
+                placeholder="Min Lot Size"
+                className="input-field"
+              />
+              <NumberInput
+                value={propertyFilters.maxLotSize}
+                onChange={(value) => handleFilterChange('maxLotSize', value)}
+                placeholder="Max Lot Size"
+                className="input-field"
+              />
+            </div>
+
+            <label className="label-text">Year Built</label>
+            <div className="filter-grid">
+              <input
+                type="text"
+                value={propertyFilters.minYearBuilt}
+                onChange={e => handleYearChange('minYearBuilt', e.target.value)}
+                placeholder="Min Year (e.g., 2000)"
+                className="input-field"
+                maxLength="4"
+                autoComplete="off"
+              />
+              <input
+                type="text"
+                value={propertyFilters.maxYearBuilt}
+                onChange={e => handleYearChange('maxYearBuilt', e.target.value)}
+                placeholder="Max Year (e.g., 2024)"
+                className="input-field"
+                maxLength="4"
+                autoComplete="off"
+              />
+            </div>
+
+            <label className="label-text">Property Type</label>
+            <select
+              value={propertyFilters.propertyType}
+              onChange={e => setPropertyFilters({...propertyFilters, propertyType: e.target.value})}
+              className="select-field"
+            >
+              <option value="">All Types</option>
+              <option value="Condo">Condo</option>
+              <option value="Landed House">Landed House</option>
+              <option value="Apartment">Apartment</option>
+              <option value="Townhouse">Townhouse</option>
+              <option value="Villa">Villa</option>
+            </select>
+
+            <label className="label-text">School District</label>
+            <select
+              value={propertyFilters.schoolDistrict}
+              onChange={e => setPropertyFilters({...propertyFilters, schoolDistrict: e.target.value})}
+              className="select-field"
+            >
+              <option value="">All Districts</option>
+              <option value="Mont Kiara">Mont Kiara</option>
+              <option value="KLCC">KLCC</option>
+              <option value="Bangsar">Bangsar</option>
+              <option value="Sri Hartamas">Sri Hartamas</option>
+              <option value="Damansara">Damansara</option>
+            </select>
+
+            <label className="label-text">Walk Score (Walkability)</label>
+            <div style={{ padding: '10px 0' }}>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={propertyFilters.minWalkScore}
+                onChange={e => setPropertyFilters({...propertyFilters, minWalkScore: parseInt(e.target.value)})}
+                style={{ width: '100%', accentColor: '#00aaff' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#aaa', marginTop: '5px' }}>
+                <span>Car-Dependent (0)</span>
+                <span style={{ color: getWalkScoreColor(propertyFilters.minWalkScore), fontWeight: 'bold' }}>
+                  {propertyFilters.minWalkScore}+
+                </span>
+                <span>Walker's Paradise (100)</span>
+              </div>
+            </div>
+
+            <label className="label-text">Features</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              {['pool', 'gym', 'parking', 'security', 'playground', 'garden'].map(feature => (
+                <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    id={`feat-${feature}`}
+                    type="checkbox"
+                    checked={propertyFilters.features.includes(feature)}
+                    onChange={() => handleFeatureToggle(feature)}
+                    style={{ accentColor: '#00aaff' }}
+                  />
+                  <label htmlFor={`feat-${feature}`} style={{ color: '#e0e0e0', fontSize: '14px', textTransform: 'capitalize' }}>
+                    {feature}
+                  </label>
+                </div>
+              ))}
+            </div>
+            
+            <div style={{ marginTop: '15px', padding: '10px', background: '#1f2328', borderRadius: '6px' }}>
+              <div style={{ fontSize: '14px', color: '#00aaff', fontWeight: 'bold' }}>
+                {filteredProperties.length} properties match your criteria
+              </div>
+              {userProfile.annualIncome && userProfile.savings && (
+                <div style={{ fontSize: '12px', color: '#aaa', marginTop: '5px' }}>
+                  Max affordable: RM {(Number(userProfile.annualIncome) * 5 + Number(userProfile.savings)).toLocaleString()}
+                </div>
+              )}
+            </div>
+          </Section>
+        ) : (
+          <div className="no-search-message">
+            <div className="icon">🏠</div>
+            <h3>No Location Selected</h3>
+            <p>Search for a location above to view property filters and discover real estate opportunities in that area.</p>
+          </div>
+        )}
+
+        {/* Property Recommendations - Only show if location searched */}
+        {searchLocation ? (
+          <Section title="🎯 AI Recommendations" icon={icons.recommendation}>
+            <div style={{ marginBottom: '15px' }}>
+              <p style={{ fontSize: '12px', color: '#888', margin: '0 0 10px 0' }}>
+                Based on your search preferences, personal profile, and market analysis
+              </p>
+              {userProfile.age && userProfile.annualIncome && (
+                <div style={{ 
+                  fontSize: '11px', 
+                  color: '#00aaff', 
+                  background: '#1f2328', 
+                  padding: '6px 8px', 
+                  borderRadius: '4px',
+                  border: '1px solid #444'
+                }}>
+                  👤 Personalized for {userProfile.age} year old, RM {Number(userProfile.annualIncome).toLocaleString()}/year
+                </div>
+              )}
+            </div>
+            
+            {getPropertyRecommendations.length > 0 ? (
+              <>
+                {getPropertyRecommendations.slice(0, 3).map((property, index) => {
+                  const isAffordable = !userProfile.annualIncome || !userProfile.savings || 
+                    property.price <= (Number(userProfile.annualIncome) * 5 + Number(userProfile.savings || 0));
+                  
+                  return (
+                    <div key={property.id} style={{ 
+                      background: '#1f2328', 
+                      padding: '12px', 
+                      borderRadius: '6px', 
+                      marginBottom: '10px',
+                      border: isAffordable ? '2px solid #4CAF50' : '1px solid #333'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                        <div style={{ 
+                          background: '#00aaff', 
+                          color: 'white', 
+                          width: '24px', 
+                          height: '24px', 
+                          borderRadius: '50%', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          fontSize: '12px', 
+                          fontWeight: 'bold' 
+                        }}>
+                          {index + 1}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <strong style={{ color: '#fff', fontSize: '14px' }}>{property.title}</strong>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' }}>
+                            <div style={{ 
+                              background: getGradeColor(property.investmentGrade), 
+                              color: 'white', 
+                              padding: '2px 6px', 
+                              borderRadius: '3px', 
+                              fontSize: '10px', 
+                              fontWeight: 'bold'
+                            }}>
+                              {property.investmentGrade}
+                            </div>
+                            {isAffordable && (
+                              <div style={{ 
+                                background: '#4CAF50', 
+                                color: 'white', 
+                                padding: '2px 6px', 
+                                borderRadius: '3px', 
+                                fontSize: '9px', 
+                                fontWeight: 'bold'
+                              }}>
+                                AFFORDABLE
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ color: '#00aaff', fontWeight: 'bold', fontSize: '12px' }}>
+                            {property.recommendationScore}/100
+                          </div>
+                          <div style={{ color: '#888', fontSize: '10px' }}>Match Score</div>
+                        </div>
+                      </div>
+                      
+                      <div className="property-price" style={{ marginBottom: '5px' }}>
+                        RM {property.price.toLocaleString()}
+                      </div>
+                      
+                      <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '8px' }}>
+                        {property.size} sqft • {property.propertyType} • {property.schoolDistrict}
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => {
+                            setSelectedProperty(property);
+                            setMapCenter({ lat: property.lat, lng: property.lng });
+                            setZoom(16);
+                          }}
+                          style={{
+                            background: '#00aaff',
+                            color: 'white',
+                            border: 'none',
+                            padding: '6px 10px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            flex: 1
+                          }}
+                        >
+                          📍 View
+                        </button>
+                        <button
+                          onClick={() => saveProperty(property)}
+                          className={`save-btn ${isPropertySaved(property.id) ? 'saved' : ''}`}
+                          style={{ flex: 1, fontSize: '11px' }}
+                        >
+                          {isPropertySaved(property.id) ? '❤️ Saved' : '🤍 Save'}
+                        </button>
+                      </div>
+                    </div>
+                  );
