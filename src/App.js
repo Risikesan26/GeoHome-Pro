@@ -39,13 +39,10 @@ const mapStyle = [
 ];
 
 // Enhanced mock data generation
-const generateMockProperties = (searchLocation) => {
+const generateMockProperties = () => {
   const propertyTypes = ['Condo', 'Landed House', 'Apartment', 'Townhouse', 'Villa'];
   const schoolDistricts = ['Mont Kiara', 'KLCC', 'Bangsar', 'Sri Hartamas', 'Damansara'];
   const features = ['pool', 'gym', 'parking', 'security', 'playground', 'garden'];
-  
-  // Generate properties around the searched location
-  const baseLatLng = searchLocation || defaultCenter;
   
   return Array.from({ length: 50 }, (_, i) => {
     const price = Math.floor(Math.random() * 2000000) + 300000;
@@ -57,8 +54,8 @@ const generateMockProperties = (searchLocation) => {
     return {
       id: i + 1,
       title: `Property ${i + 1}`,
-      lat: baseLatLng.lat + (Math.random() - 0.5) * 0.1,
-      lng: baseLatLng.lng + (Math.random() - 0.5) * 0.1,
+      lat: 3.139 + (Math.random() - 0.5) * 0.1,
+      lng: 101.6869 + (Math.random() - 0.5) * 0.1,
       price,
       size,
       lotSize: Math.floor(Math.random() * 5000) + 1000,
@@ -131,6 +128,7 @@ const generateNeighborhoodData = () => {
   }));
 };
 
+const mockProperties = generateMockProperties();
 const marketData = generateMarketAnalytics();
 const neighborhoodData = generateNeighborhoodData();
 
@@ -156,82 +154,6 @@ const generateMarketTrends = () => {
   }));
 };
 
-const NumberInput = ({ value, onChange, placeholder, className }) => {
-  const [displayValue, setDisplayValue] = useState('');
-  const [isFocused, setIsFocused] = useState(false);
-  const inputRef = useRef(null);
-  
-  // Update display value when external value changes (only when not focused)
-  useEffect(() => {
-    if (!isFocused) {
-      if (value === '' || value === null || value === undefined) {
-        setDisplayValue('');
-      } else {
-        const formatted = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-        setDisplayValue(formatted);
-      }
-    }
-  }, [value, isFocused]);
-
-  const handleChange = (e) => {
-    const inputValue = e.target.value;
-    const cursorPosition = e.target.selectionStart;
-    
-    // Allow only digits and commas
-    const cleanValue = inputValue.replace(/[^\d,]/g, '');
-    
-    // Remove all commas and reformat
-    const numericOnly = cleanValue.replace(/,/g, '');
-    
-    // Update display value with formatting
-    const formatted = numericOnly === '' ? '' : numericOnly.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-    setDisplayValue(formatted);
-    
-    // Pass the clean numeric value to parent
-    onChange(numericOnly);
-    
-    // Restore cursor position after formatting
-    requestAnimationFrame(() => {
-      if (inputRef.current && document.activeElement === inputRef.current) {
-        // Calculate new cursor position based on comma changes
-        const commasBeforeCursor = (inputValue.slice(0, cursorPosition).match(/,/g) || []).length;
-        const commasInFormatted = (formatted.slice(0, cursorPosition).match(/,/g) || []).length;
-        const adjustment = commasInFormatted - commasBeforeCursor;
-        const newPosition = Math.min(cursorPosition + adjustment, formatted.length);
-        
-        inputRef.current.setSelectionRange(newPosition, newPosition);
-      }
-    });
-  };
-
-  const handleFocus = () => {
-    setIsFocused(true);
-  };
-
-  const handleBlur = () => {
-    setIsFocused(false);
-    // Reformat on blur to ensure consistency
-    if (value) {
-      const formatted = value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-      setDisplayValue(formatted);
-    }
-  };
-
-  return (
-    <input
-      ref={inputRef}
-      type="text"
-      value={displayValue}
-      onChange={handleChange}
-      onFocus={handleFocus}
-      onBlur={handleBlur}
-      placeholder={placeholder}
-      className={className}
-      autoComplete="off"
-    />
-  );
-};
-
 export default function GeoHomePro() {
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY || 'demo-key',
@@ -242,18 +164,16 @@ export default function GeoHomePro() {
   const [mapCenter, setMapCenter] = useState(defaultCenter);
   const [zoom, setZoom] = useState(12);
   const [markerPosition, setMarkerPosition] = useState(defaultCenter);
-  const [searchLocation, setSearchLocation] = useState(null); // NEW: Track if location has been searched
-  const [searchedLocationName, setSearchedLocationName] = useState(''); // NEW: Store location name
-  const [allProperties, setAllProperties] = useState([]); // NEW: Start with empty array
   const [directions, setDirections] = useState(null);
   const [travelMode, setTravelMode] = useState('DRIVING');
   const [distanceInfo, setDistanceInfo] = useState('');
   const [nearbyPlaces, setNearbyPlaces] = useState([]);
   const [placeType, setPlaceType] = useState('school');
   const [heatmapData, setHeatmapData] = useState([]);
+  const [allProperties] = useState(mockProperties);
   const [selectedProperty, setSelectedProperty] = useState(null);
 
-  // Enhanced property filters - Store as strings to avoid formatting issues
+  // Enhanced property filters - Fixed input handling
   const [propertyFilters, setPropertyFilters] = useState({
     minPrice: '',
     maxPrice: '',
@@ -269,12 +189,17 @@ export default function GeoHomePro() {
     minWalkScore: 60
   });
 
-  // New state for enhanced features (removed savedSearches)
+  // New state for enhanced features
+  const [savedSearches, setSavedSearches] = useState([]);
   const [showMarketTrends, setShowMarketTrends] = useState(false);
   const [marketTrends] = useState(generateMarketTrends());
+  const [showSaveSearchModal, setShowSaveSearchModal] = useState(false);
+  const [searchName, setSearchName] = useState('');
+  const [emailNotifications, setEmailNotifications] = useState('');
 
   // New state for saved properties
   const [savedProperties, setSavedProperties] = useState([]);
+  const [showSavedProperties, setShowSavedProperties] = useState(false);
 
   // Analytics Dashboard State
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -287,32 +212,54 @@ export default function GeoHomePro() {
     expectedAppreciation: 5
   });
 
+  // Data layers state
+  const [dataLayers] = useState([]);
+  const [visibleLayers, setVisibleLayers] = useState({
+    'Public Transport': true,
+    'Crime Hotspot': true,
+    'Flood Prone': true,
+  });
+
   const mapRef = useRef(null);
   const autocompleteRef = useRef(null);
 
-  // Simplified input change handlers
-  const handleFilterChange = (field, value) => {
-    setPropertyFilters(prev => ({
-      ...prev,
-      [field]: value
-    }));
+  // Helper function to format number input values
+  const formatNumber = (value) => {
+    if (!value) return '';
+    // This function is still useful for display elsewhere, but not for the input's value prop
+    return Number(value).toLocaleString('en-US');
   };
 
-  const handleYearChange = (field, value) => {
-    // Allow only digits and limit to 4 characters for year fields
-    const numericValue = value.replace(/\D/g, '').slice(0, 4);
-    setPropertyFilters(prev => ({
-      ...prev,
-      [field]: numericValue
-    }));
+  // Helper function to parse formatted number input
+  const parseNumber = (value) => {
+    return value.replace(/,/g, '');
   };
 
-  // Enhanced filtering logic - only filter if properties exist
-  const filteredProperties = useMemo(() => {
-    if (!searchLocation || allProperties.length === 0) {
-      return [];
+  // *** FIXED INPUT HANDLING ***
+  // A single, robust handler for all filter text inputs.
+  const handleFilterInputChange = (e) => {
+    const { name, value } = e.target;
+
+    let processedValue = value;
+
+    // For numeric fields, only allow digits.
+    if (['minPrice', 'maxPrice', 'minSize', 'maxSize', 'minLotSize', 'maxLotSize'].includes(name)) {
+      processedValue = value.replace(/[^\d]/g, '');
+    }
+
+    // For year fields, only allow 4 digits.
+    if (['minYearBuilt', 'maxYearBuilt'].includes(name)) {
+      processedValue = value.replace(/[^\d]/g, '').slice(0, 4);
     }
     
+    setPropertyFilters(prev => ({
+      ...prev,
+      [name]: processedValue
+    }));
+  };
+
+  // Enhanced filtering logic
+  const filteredProperties = useMemo(() => {
     return allProperties.filter(property => {
       const minPrice = Number(propertyFilters.minPrice) || 0;
       const maxPrice = Number(propertyFilters.maxPrice) || Infinity;
@@ -334,14 +281,10 @@ export default function GeoHomePro() {
 
       return priceMatch && sizeMatch && lotSizeMatch && yearMatch && typeMatch && districtMatch && walkScoreMatch && featureMatch;
     });
-  }, [allProperties, propertyFilters, searchLocation]);
+  }, [allProperties, propertyFilters]);
 
-  // Property recommendation engine - only work if properties exist
+  // Property recommendation engine
   const getPropertyRecommendations = useMemo(() => {
-    if (!searchLocation || filteredProperties.length === 0) {
-      return [];
-    }
-    
     const userPreferences = {
       avgPrice: filteredProperties.reduce((sum, p) => sum + p.price, 0) / filteredProperties.length || 1000000,
       preferredDistricts: propertyFilters.schoolDistrict ? [propertyFilters.schoolDistrict] : [],
@@ -377,7 +320,7 @@ export default function GeoHomePro() {
       })
       .sort((a, b) => b.recommendationScore - a.recommendationScore)
       .slice(0, 5);
-  }, [allProperties, filteredProperties, propertyFilters, searchLocation]);
+  }, [allProperties, filteredProperties, propertyFilters]);
 
   // Investment calculator
   const calculateInvestmentMetrics = (property) => {
@@ -442,7 +385,7 @@ export default function GeoHomePro() {
 
   // Fetch nearby places when location or place type changes
   useEffect(() => {
-    if (!mapRef.current || !markerPosition || !searchLocation) return;
+    if (!mapRef.current || !markerPosition) return;
     
     const service = new window.google.maps.places.PlacesService(mapRef.current);
     service.nearbySearch(
@@ -469,7 +412,7 @@ export default function GeoHomePro() {
         }
       }
     );
-  }, [markerPosition, placeType, searchLocation]);
+  }, [markerPosition, placeType]);
 
   // Event handlers
   const onMapLoad = useCallback((map) => {
@@ -486,12 +429,6 @@ export default function GeoHomePro() {
       lat: place.geometry.location.lat(),
       lng: place.geometry.location.lng(),
     };
-    
-    // NEW: Set search location and generate properties
-    setSearchLocation(location);
-    setSearchedLocationName(place.formatted_address || place.name || 'Selected Location');
-    setAllProperties(generateMockProperties(location));
-    
     setMapCenter(location);
     setMarkerPosition(location);
     setZoom(14);
@@ -533,6 +470,35 @@ export default function GeoHomePro() {
         ? prev.features.filter(f => f !== feature)
         : [...prev.features, feature],
     }));
+  };
+
+  const saveSearch = () => {
+    if (!searchName.trim()) {
+      alert('Please enter a search name');
+      return;
+    }
+    const newSearch = {
+      id: Date.now(),
+      name: searchName,
+      filters: { ...propertyFilters },
+      email: emailNotifications,
+      createdAt: new Date().toISOString(),
+      resultCount: filteredProperties.length
+    };
+    setSavedSearches([...savedSearches, newSearch]);
+    setShowSaveSearchModal(false);
+    setSearchName('');
+    setEmailNotifications('');
+    alert('Search saved successfully!');
+  };
+
+  const loadSavedSearch = (search) => {
+    setPropertyFilters(search.filters);
+    alert(`Loaded search: ${search.name}`);
+  };
+
+  const deleteSavedSearch = (searchId) => {
+    setSavedSearches(prev => prev.filter(s => s.id !== searchId));
   };
 
   // Property saving functions
@@ -598,10 +564,13 @@ export default function GeoHomePro() {
   const icons = {
     search: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
     filters: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.46L22 3z"></path></svg>,
+    layers: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>,
     routes: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="5" x2="6" y2="17"></line><polyline points="14 5 18 5 18 9"></polyline><line x1="6" y1="7" x2="18" y2="19"></line><polyline points="10 19 6 19 6 15"></polyline></svg>,
     trends: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>,
+    save: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17,21 17,13 7,13 7,21"></polyline><polyline points="7,3 7,8 15,8"></polyline></svg>,
     heart: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>,
     analytics: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>,
+    calculator: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"></rect><line x1="8" x2="16" y1="6" y2="6"></line><line x1="16" x2="16" y1="10" y2="14"></line><path d="m16 10-4 4"></path><path d="m12 10 4 4"></path><line x1="8" x2="8" y1="14" y2="18"></line><line x1="12" x2="12" y1="14" y2="18"></line></svg>,
     recommendation: <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4"></path><path d="M21 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path><path d="M3 12c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path><path d="M12 21c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path><path d="M12 3c.552 0 1-.448 1-1s-.448-1-1-1-1 .448-1 1 .448 1 1 1"></path></svg>
   };
 
@@ -664,21 +633,7 @@ export default function GeoHomePro() {
           </div>
 
           <div className="analytics-content">
-            {!searchLocation ? (
-              <div style={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                height: '300px',
-                textAlign: 'center',
-                color: '#aaa'
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '20px' }}>🔍</div>
-                <h3 style={{ color: '#fff', marginBottom: '10px' }}>No Location Selected</h3>
-                <p>Please search for a location first to view analytics and property data.</p>
-              </div>
-            ) : activeAnalyticsTab === 'market' && (
+            {activeAnalyticsTab === 'market' && (
               <div className="analytics-grid">
                 <div className="chart-container">
                   <h3>Market Price Trends (12 Months)</h3>
@@ -757,7 +712,7 @@ export default function GeoHomePro() {
               </div>
             )}
 
-            {activeAnalyticsTab === 'investment' && searchLocation && (
+            {activeAnalyticsTab === 'investment' && (
               <div className="investment-analysis">
                 <div className="investment-params">
                   <h3>Investment Parameters</h3>
@@ -876,7 +831,7 @@ export default function GeoHomePro() {
               </div>
             )}
 
-            {activeAnalyticsTab === 'neighborhood' && searchLocation && (
+            {activeAnalyticsTab === 'neighborhood' && (
               <div className="neighborhood-analysis">
                 <h3>Neighborhood Comparison</h3>
                 <div className="neighborhood-cards">
@@ -937,7 +892,7 @@ export default function GeoHomePro() {
               </div>
             )}
 
-            {activeAnalyticsTab === 'recommendations' && searchLocation && (
+            {activeAnalyticsTab === 'recommendations' && (
               <div className="recommendations-analysis">
                 <h3>🎯 Property Recommendations Based on Your Preferences</h3>
                 <div className="recommendation-explanation">
@@ -1074,6 +1029,8 @@ export default function GeoHomePro() {
     .walkability-fill { height: 100%; border-radius: 4px; transition: width 0.3s ease; }
     .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; }
     .modal-content { background: #2c3038; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; color: white; }
+    .saved-search-item { background: #1f2328; padding: 12px; border-radius: 6px; margin-bottom: 8px; }
+    .search-stats { font-size: 12px; color: #888; margin-top: 5px; }
     .delete-btn { background: #f44336; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; margin-left: 8px; }
     .close-btn { background: #f44336; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
     
@@ -1225,36 +1182,6 @@ export default function GeoHomePro() {
       padding: 8px 12px; 
       font-size: 12px;
     }
-    
-    /* No Search State Styles */
-    .no-search-message {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 40px 20px;
-      background: #2c3038;
-      border-radius: 8px;
-      border: 1px dashed #444;
-      color: #aaa;
-    }
-    .no-search-message .icon {
-      font-size: 48px;
-      margin-bottom: 20px;
-      opacity: 0.7;
-    }
-    .no-search-message h3 {
-      color: #fff;
-      margin: 0 0 10px 0;
-      font-size: 18px;
-    }
-    .no-search-message p {
-      margin: 0;
-      font-size: 14px;
-      max-width: 300px;
-      line-height: 1.5;
-    }
   `;
 
   if (loadError) return <div style={{color: 'white', padding: '20px'}}>Error loading maps</div>;
@@ -1267,28 +1194,41 @@ export default function GeoHomePro() {
       {/* Analytics Modal */}
       <AnalyticsModal />
       
+      {/* Save Search Modal */}
+      {showSaveSearchModal && (
+        <div className="modal-overlay" onClick={() => setShowSaveSearchModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 20px 0' }}>Save Search</h3>
+            <input
+              type="text"
+              placeholder="Search name"
+              value={searchName}
+              onChange={e => setSearchName(e.target.value)}
+              className="input-field"
+              style={{ marginBottom: '15px' }}
+            />
+            <input
+              type="email"
+              placeholder="Email for notifications (optional)"
+              value={emailNotifications}
+              onChange={e => setEmailNotifications(e.target.value)}
+              className="input-field"
+              style={{ marginBottom: '20px' }}
+            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={saveSearch} className="primary-btn">Save</button>
+              <button onClick={() => setShowSaveSearchModal(false)} className="secondary-btn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sidebar */}
       <div className="sidebar-container" style={{ width: 400, height: '100vh', overflowY: 'auto', background: '#1f2328', padding: '20px', fontFamily: "'Inter', sans-serif" }}>
         
         <div style={{ marginBottom: '25px' }}>
           <h1 style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff', margin: 0 }}>GeoHome Pro</h1>
           <p style={{ fontSize: '14px', color: '#888', marginTop: '5px' }}>Enhanced Real Estate & Market Analysis</p>
-          {searchedLocationName && (
-            <div style={{ 
-              background: '#00aaff', 
-              color: 'white', 
-              padding: '8px 12px', 
-              borderRadius: '6px', 
-              fontSize: '12px', 
-              marginTop: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}>
-              <span>📍</span>
-              <span>Searching in: {searchedLocationName}</span>
-            </div>
-          )}
         </div>
         
         {/* Analytics Dashboard Button */}
@@ -1306,308 +1246,301 @@ export default function GeoHomePro() {
             {icons.search} Location Search
           </h2>
           <Autocomplete onLoad={ac => (autocompleteRef.current = ac)} onPlaceChanged={onPlaceChanged}>
-            <input type="text" placeholder="Search for a location (e.g., Kuala Lumpur)..." className="input-field" />
+            <input type="text" placeholder="Search a location..." className="input-field" />
           </Autocomplete>
-          
-          {!searchLocation && (
-            <div style={{ 
-              marginTop: '15px', 
-              padding: '12px', 
-              background: '#1f2328', 
-              borderRadius: '6px', 
-              border: '1px solid #444',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔍</div>
-              <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>
-                Enter a location to discover properties and market insights
-              </p>
-            </div>
-          )}
         </div>
 
-        {/* Enhanced Property Filters - Only show if location searched */}
-        {searchLocation ? (
-          <Section title="Advanced Property Filters" icon={icons.filters} defaultOpen>
-            <label className="label-text">Price Range (RM)</label>
-            <div className="filter-grid">
-              <NumberInput
-                value={propertyFilters.minPrice}
-                onChange={(value) => handleFilterChange('minPrice', value)}
-                placeholder="Min Price"
-                className="input-field"
-              />
-              <NumberInput
-                value={propertyFilters.maxPrice}
-                onChange={(value) => handleFilterChange('maxPrice', value)}
-                placeholder="Max Price"
-                className="input-field"
-              />
+        {/* Enhanced Property Filters */}
+        <Section title="Advanced Property Filters" icon={icons.filters} defaultOpen>
+          <label className="label-text">Price Range (RM)</label>
+          <div className="filter-grid">
+            <input
+              type="text"
+              name="minPrice"
+              value={propertyFilters.minPrice}
+              onChange={handleFilterInputChange}
+              placeholder="Min Price"
+              className="input-field"
+              autoComplete="off"
+            />
+            <input
+              type="text"
+              name="maxPrice"
+              value={propertyFilters.maxPrice}
+              onChange={handleFilterInputChange}
+              placeholder="Max Price"
+              className="input-field"
+              autoComplete="off"
+            />
+          </div>
+
+          <label className="label-text">Size (sqft)</label>
+          <div className="filter-grid">
+            <input
+              type="text"
+              name="minSize"
+              value={propertyFilters.minSize}
+              onChange={handleFilterInputChange}
+              placeholder="Min Size"
+              className="input-field"
+              autoComplete="off"
+            />
+            <input
+              type="text"
+              name="maxSize"
+              value={propertyFilters.maxSize}
+              onChange={handleFilterInputChange}
+              placeholder="Max Size"
+              className="input-field"
+              autoComplete="off"
+            />
+          </div>
+
+          <label className="label-text">Lot Size (sqft)</label>
+          <div className="filter-grid">
+            <input
+              type="text"
+              name="minLotSize"
+              value={propertyFilters.minLotSize}
+              onChange={handleFilterInputChange}
+              placeholder="Min Lot Size"
+              className="input-field"
+              autoComplete="off"
+            />
+            <input
+              type="text"
+              name="maxLotSize"
+              value={propertyFilters.maxLotSize}
+              onChange={handleFilterInputChange}
+              placeholder="Max Lot Size"
+              className="input-field"
+              autoComplete="off"
+            />
+          </div>
+
+          <label className="label-text">Year Built</label>
+          <div className="filter-grid">
+            <input
+              type="text"
+              name="minYearBuilt"
+              value={propertyFilters.minYearBuilt}
+              onChange={handleFilterInputChange}
+              placeholder="Min Year (e.g., 2000)"
+              className="input-field"
+              maxLength="4"
+              autoComplete="off"
+            />
+            <input
+              type="text"
+              name="maxYearBuilt"
+              value={propertyFilters.maxYearBuilt}
+              onChange={handleFilterInputChange}
+              placeholder="Max Year (e.g., 2024)"
+              className="input-field"
+              maxLength="4"
+              autoComplete="off"
+            />
+          </div>
+
+          <label className="label-text">Property Type</label>
+          <select
+            value={propertyFilters.propertyType}
+            onChange={e => setPropertyFilters({...propertyFilters, propertyType: e.target.value})}
+            className="select-field"
+          >
+            <option value="">All Types</option>
+            <option value="Condo">Condo</option>
+            <option value="Landed House">Landed House</option>
+            <option value="Apartment">Apartment</option>
+            <option value="Townhouse">Townhouse</option>
+            <option value="Villa">Villa</option>
+          </select>
+
+          <label className="label-text">School District</label>
+          <select
+            value={propertyFilters.schoolDistrict}
+            onChange={e => setPropertyFilters({...propertyFilters, schoolDistrict: e.target.value})}
+            className="select-field"
+          >
+            <option value="">All Districts</option>
+            <option value="Mont Kiara">Mont Kiara</option>
+            <option value="KLCC">KLCC</option>
+            <option value="Bangsar">Bangsar</option>
+            <option value="Sri Hartamas">Sri Hartamas</option>
+            <option value="Damansara">Damansara</option>
+          </select>
+
+          <label className="label-text">Walk Score (Walkability)</label>
+          <div style={{ padding: '10px 0' }}>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={propertyFilters.minWalkScore}
+              onChange={e => setPropertyFilters({...propertyFilters, minWalkScore: parseInt(e.target.value)})}
+              style={{ width: '100%', accentColor: '#00aaff' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#aaa', marginTop: '5px' }}>
+              <span>Car-Dependent (0)</span>
+              <span style={{ color: getWalkScoreColor(propertyFilters.minWalkScore), fontWeight: 'bold' }}>
+                {propertyFilters.minWalkScore}+
+              </span>
+              <span>Walker's Paradise (100)</span>
             </div>
+          </div>
 
-            <label className="label-text">Size (sqft)</label>
-            <div className="filter-grid">
-              <NumberInput
-                value={propertyFilters.minSize}
-                onChange={(value) => handleFilterChange('minSize', value)}
-                placeholder="Min Size"
-                className="input-field"
-              />
-              <NumberInput
-                value={propertyFilters.maxSize}
-                onChange={(value) => handleFilterChange('maxSize', value)}
-                placeholder="Max Size"
-                className="input-field"
-              />
-            </div>
-
-            <label className="label-text">Lot Size (sqft)</label>
-            <div className="filter-grid">
-              <NumberInput
-                value={propertyFilters.minLotSize}
-                onChange={(value) => handleFilterChange('minLotSize', value)}
-                placeholder="Min Lot Size"
-                className="input-field"
-              />
-              <NumberInput
-                value={propertyFilters.maxLotSize}
-                onChange={(value) => handleFilterChange('maxLotSize', value)}
-                placeholder="Max Lot Size"
-                className="input-field"
-              />
-            </div>
-
-            <label className="label-text">Year Built</label>
-            <div className="filter-grid">
-              <input
-                type="text"
-                value={propertyFilters.minYearBuilt}
-                onChange={e => handleYearChange('minYearBuilt', e.target.value)}
-                placeholder="Min Year (e.g., 2000)"
-                className="input-field"
-                maxLength="4"
-                autoComplete="off"
-              />
-              <input
-                type="text"
-                value={propertyFilters.maxYearBuilt}
-                onChange={e => handleYearChange('maxYearBuilt', e.target.value)}
-                placeholder="Max Year (e.g., 2024)"
-                className="input-field"
-                maxLength="4"
-                autoComplete="off"
-              />
-            </div>
-
-            <label className="label-text">Property Type</label>
-            <select
-              value={propertyFilters.propertyType}
-              onChange={e => setPropertyFilters({...propertyFilters, propertyType: e.target.value})}
-              className="select-field"
-            >
-              <option value="">All Types</option>
-              <option value="Condo">Condo</option>
-              <option value="Landed House">Landed House</option>
-              <option value="Apartment">Apartment</option>
-              <option value="Townhouse">Townhouse</option>
-              <option value="Villa">Villa</option>
-            </select>
-
-            <label className="label-text">School District</label>
-            <select
-              value={propertyFilters.schoolDistrict}
-              onChange={e => setPropertyFilters({...propertyFilters, schoolDistrict: e.target.value})}
-              className="select-field"
-            >
-              <option value="">All Districts</option>
-              <option value="Mont Kiara">Mont Kiara</option>
-              <option value="KLCC">KLCC</option>
-              <option value="Bangsar">Bangsar</option>
-              <option value="Sri Hartamas">Sri Hartamas</option>
-              <option value="Damansara">Damansara</option>
-            </select>
-
-            <label className="label-text">Walk Score (Walkability)</label>
-            <div style={{ padding: '10px 0' }}>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={propertyFilters.minWalkScore}
-                onChange={e => setPropertyFilters({...propertyFilters, minWalkScore: parseInt(e.target.value)})}
-                style={{ width: '100%', accentColor: '#00aaff' }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#aaa', marginTop: '5px' }}>
-                <span>Car-Dependent (0)</span>
-                <span style={{ color: getWalkScoreColor(propertyFilters.minWalkScore), fontWeight: 'bold' }}>
-                  {propertyFilters.minWalkScore}+
-                </span>
-                <span>Walker's Paradise (100)</span>
+          <label className="label-text">Features</label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            {['pool', 'gym', 'parking', 'security', 'playground', 'garden'].map(feature => (
+              <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  id={`feat-${feature}`}
+                  type="checkbox"
+                  checked={propertyFilters.features.includes(feature)}
+                  onChange={() => handleFeatureToggle(feature)}
+                  style={{ accentColor: '#00aaff' }}
+                />
+                <label htmlFor={`feat-${feature}`} style={{ color: '#e0e0e0', fontSize: '14px', textTransform: 'capitalize' }}>
+                  {feature}
+                </label>
               </div>
-            </div>
+            ))}
+          </div>
 
-            <label className="label-text">Features</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              {['pool', 'gym', 'parking', 'security', 'playground', 'garden'].map(feature => (
-                <div key={feature} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    id={`feat-${feature}`}
-                    type="checkbox"
-                    checked={propertyFilters.features.includes(feature)}
-                    onChange={() => handleFeatureToggle(feature)}
-                    style={{ accentColor: '#00aaff' }}
-                  />
-                  <label htmlFor={`feat-${feature}`} style={{ color: '#e0e0e0', fontSize: '14px', textTransform: 'capitalize' }}>
-                    {feature}
-                  </label>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+            <button onClick={() => setShowSaveSearchModal(true)} className="primary-btn">
+              {icons.save} Save Search
+            </button>
+          </div>
+          
+          <div style={{ marginTop: '15px', padding: '10px', background: '#1f2328', borderRadius: '6px' }}>
+            <div style={{ fontSize: '14px', color: '#00aaff', fontWeight: 'bold' }}>
+              {filteredProperties.length} properties match your criteria
+            </div>
+          </div>
+        </Section>
+
+        {/* Property Recommendations */}
+        <Section title="🎯 AI Recommendations" icon={icons.recommendation}>
+          <div style={{ marginBottom: '15px' }}>
+            <p style={{ fontSize: '12px', color: '#888', margin: '0 0 10px 0' }}>
+              Based on your search preferences and market analysis
+            </p>
+          </div>
+          
+          {getPropertyRecommendations.slice(0, 3).map((property, index) => (
+            <div key={property.id} style={{ 
+              background: '#1f2328', 
+              padding: '12px', 
+              borderRadius: '6px', 
+              marginBottom: '10px',
+              border: '1px solid #333'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                <div style={{ 
+                  background: '#00aaff', 
+                  color: 'white', 
+                  width: '24px', 
+                  height: '24px', 
+                  borderRadius: '50%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  fontSize: '12px', 
+                  fontWeight: 'bold' 
+                }}>
+                  {index + 1}
                 </div>
-              ))}
-            </div>
-            
-            <div style={{ marginTop: '15px', padding: '10px', background: '#1f2328', borderRadius: '6px' }}>
-              <div style={{ fontSize: '14px', color: '#00aaff', fontWeight: 'bold' }}>
-                {filteredProperties.length} properties match your criteria
-              </div>
-            </div>
-          </Section>
-        ) : (
-          <div className="no-search-message">
-            <div className="icon">🏠</div>
-            <h3>No Location Selected</h3>
-            <p>Search for a location above to view property filters and discover real estate opportunities in that area.</p>
-          </div>
-        )}
-
-        {/* Property Recommendations - Only show if location searched */}
-        {searchLocation ? (
-          <Section title="🎯 AI Recommendations" icon={icons.recommendation}>
-            <div style={{ marginBottom: '15px' }}>
-              <p style={{ fontSize: '12px', color: '#888', margin: '0 0 10px 0' }}>
-                Based on your search preferences and market analysis
-              </p>
-            </div>
-            
-            {getPropertyRecommendations.length > 0 ? (
-              <>
-                {getPropertyRecommendations.slice(0, 3).map((property, index) => (
-                  <div key={property.id} style={{ 
-                    background: '#1f2328', 
-                    padding: '12px', 
-                    borderRadius: '6px', 
-                    marginBottom: '10px',
-                    border: '1px solid #333'
+                <div style={{ flex: 1 }}>
+                  <strong style={{ color: '#fff', fontSize: '14px' }}>{property.title}</strong>
+                  <div style={{ 
+                    background: getGradeColor(property.investmentGrade), 
+                    color: 'white', 
+                    padding: '2px 6px', 
+                    borderRadius: '3px', 
+                    fontSize: '10px', 
+                    fontWeight: 'bold',
+                    display: 'inline-block',
+                    marginLeft: '8px'
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                      <div style={{ 
-                        background: '#00aaff', 
-                        color: 'white', 
-                        width: '24px', 
-                        height: '24px', 
-                        borderRadius: '50%', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center', 
-                        fontSize: '12px', 
-                        fontWeight: 'bold' 
-                      }}>
-                        {index + 1}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <strong style={{ color: '#fff', fontSize: '14px' }}>{property.title}</strong>
-                        <div style={{ 
-                          background: getGradeColor(property.investmentGrade), 
-                          color: 'white', 
-                          padding: '2px 6px', 
-                          borderRadius: '3px', 
-                          fontSize: '10px', 
-                          fontWeight: 'bold',
-                          display: 'inline-block',
-                          marginLeft: '8px'
-                        }}>
-                          {property.investmentGrade}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ color: '#00aaff', fontWeight: 'bold', fontSize: '12px' }}>
-                          {property.recommendationScore}/100
-                        </div>
-                        <div style={{ color: '#888', fontSize: '10px' }}>Match Score</div>
-                      </div>
-                    </div>
-                    
-                    <div className="property-price" style={{ marginBottom: '5px' }}>
-                      RM {property.price.toLocaleString()}
-                    </div>
-                    
-                    <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '8px' }}>
-                      {property.size} sqft • {property.propertyType} • {property.schoolDistrict}
-                    </div>
-                    
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        onClick={() => {
-                          setSelectedProperty(property);
-                          setMapCenter({ lat: property.lat, lng: property.lng });
-                          setZoom(16);
-                        }}
-                        style={{
-                          background: '#00aaff',
-                          color: 'white',
-                          border: 'none',
-                          padding: '6px 10px',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          cursor: 'pointer',
-                          flex: 1
-                        }}
-                      >
-                        📍 View
-                      </button>
-                      <button
-                        onClick={() => saveProperty(property)}
-                        className={`save-btn ${isPropertySaved(property.id) ? 'saved' : ''}`}
-                        style={{ flex: 1, fontSize: '11px' }}
-                      >
-                        {isPropertySaved(property.id) ? '❤️ Saved' : '🤍 Save'}
-                      </button>
-                    </div>
+                    {property.investmentGrade}
                   </div>
-                ))}
-                
-                <button 
-                  onClick={() => {
-                    setShowAnalytics(true);
-                    setActiveAnalyticsTab('recommendations');
-                  }}
-                  className="secondary-btn"
-                  style={{ marginTop: '10px' }}
-                >
-                  View All Recommendations
-                </button>
-              </>
-            ) : (
-              <div className="no-search-message">
-                <div className="icon">🎯</div>
-                <h3>No Recommendations Yet</h3>
-                <p>Adjust your filters to get personalized property recommendations.</p>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: '#00aaff', fontWeight: 'bold', fontSize: '12px' }}>
+                    {property.recommendationScore}/100
+                  </div>
+                  <div style={{ color: '#888', fontSize: '10px' }}>Match Score</div>
+                </div>
               </div>
-            )}
-          </Section>
-        ) : (
-          <div className="no-search-message">
-            <div className="icon">🎯</div>
-            <h3>AI Recommendations</h3>
-            <p>Search for a location to get personalized property recommendations based on your preferences.</p>
-          </div>
-        )}
+              
+              <div className="property-price" style={{ marginBottom: '5px' }}>
+                RM {property.price.toLocaleString()}
+              </div>
+              
+              <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '8px' }}>
+                {property.size} sqft • {property.propertyType} • {property.schoolDistrict}
+              </div>
+              
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => {
+                    setSelectedProperty(property);
+                    setMapCenter({ lat: property.lat, lng: property.lng });
+                    setZoom(16);
+                  }}
+                  style={{
+                    background: '#00aaff',
+                    color: 'white',
+                    border: 'none',
+                    padding: '6px 10px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    flex: 1
+                  }}
+                >
+                  📍 View
+                </button>
+                <button
+                  onClick={() => saveProperty(property)}
+                  className={`save-btn ${isPropertySaved(property.id) ? 'saved' : ''}`}
+                  style={{ flex: 1, fontSize: '11px' }}
+                >
+                  {isPropertySaved(property.id) ? '❤️ Saved' : '🤍 Save'}
+                </button>
+              </div>
+            </div>
+          ))}
+          
+          <button 
+            onClick={() => {
+              setShowAnalytics(true);
+              setActiveAnalyticsTab('recommendations');
+            }}
+            className="secondary-btn"
+            style={{ marginTop: '10px' }}
+          >
+            View All Recommendations
+          </button>
+        </Section>
 
         {/* Saved Properties */}
         <Section title={`Saved Properties (${savedProperties.length})`} icon={icons.heart}>
           {savedProperties.length === 0 ? (
-            <div className="no-search-message">
-              <div className="icon">💝</div>
-              <h3>No saved properties yet</h3>
-              <p>Click the heart button on any property to save it for later viewing.</p>
+            <div style={{ 
+              background: '#1f2328', 
+              padding: '15px', 
+              borderRadius: '6px', 
+              textAlign: 'center',
+              border: '1px dashed #444'
+            }}>
+              <p style={{ fontSize: '14px', color: '#888', margin: 0 }}>
+                💝 No saved properties yet
+              </p>
+              <p style={{ fontSize: '12px', color: '#666', margin: '5px 0 0 0' }}>
+                Click the heart button on any property to save it
+              </p>
             </div>
           ) : (
             <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
@@ -1683,178 +1616,223 @@ export default function GeoHomePro() {
           )}
         </Section>
 
-        {/* Market Trends - Only show if location searched */}
-        {searchLocation ? (
-          <Section title="Market Trends" icon={icons.trends}>
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#e0e0e0', fontSize: '14px' }}>
-                <input
-                  type="checkbox"
-                  checked={showMarketTrends}
-                  onChange={e => setShowMarketTrends(e.target.checked)}
-                  style={{ accentColor: '#00aaff' }}
-                />
-                Show Price Appreciation Areas
-              </label>
-            </div>
-            
-            <div style={{ background: '#1f2328', padding: '12px', borderRadius: '6px' }}>
-              <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '14px' }}>Area Performance (YoY)</h4>
-              {marketTrends.map(area => (
-                <div key={area.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ color: '#e0e0e0', fontSize: '13px' }}>{area.name}</span>
-                  <span style={{ 
-                    color: area.appreciation > 5 ? '#4CAF50' : '#F44336', 
-                    fontWeight: 'bold', 
-                    fontSize: '13px' 
-                  }}>
-                    {area.appreciation > 0 ? '+' : ''}{area.appreciation}%
-                  </span>
+        {/* Saved Searches */}
+        <Section title="Saved Searches" icon={icons.save}>
+          {savedSearches.length === 0 ? (
+            <p style={{ fontSize: '14px', color: '#888' }}>No saved searches yet</p>
+          ) : (
+            <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+              {savedSearches.map(search => (
+                <div key={search.id} className="saved-search-item">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <strong style={{ color: '#fff', fontSize: '14px' }}>{search.name}</strong>
+                      <div className="search-stats">
+                        {search.resultCount} results • {new Date(search.createdAt).toLocaleDateString()}
+                        {search.email && <span> • 📧 {search.email}</span>}
+                      </div>
+                    </div>
+                    <div>
+                      <button
+                        onClick={() => loadSavedSearch(search)}
+                        style={{ background: '#00aaff', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', marginRight: '5px' }}
+                      >
+                        Load
+                      </button>
+                      <button
+                        onClick={() => deleteSavedSearch(search.id)}
+                        className="delete-btn"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
-          </Section>
-        ) : (
-          <div className="no-search-message">
-            <div className="icon">📈</div>
-            <h3>Market Trends</h3>
-            <p>Search for a location to view market trends and price appreciation data for different areas.</p>
-          </div>
-        )}
+          )}
+        </Section>
 
-        {/* Nearby & Routes - Only show if location searched */}
-        {searchLocation ? (
-          <Section title="Nearby & Routes" icon={icons.routes}>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-              <select
-                value={placeType}
-                onChange={e => setPlaceType(e.target.value)}
-                className="select-field"
-              >
-                <option value="school">School</option>
-                <option value="restaurant">Restaurant</option>
-                <option value="hospital">Hospital</option>
-                <option value="park">Park</option>
-              </select>
-              <select
-                value={travelMode}
-                onChange={e => setTravelMode(e.target.value)}
-                className="select-field"
-              >
-                <option value="DRIVING">Driving</option>
-                <option value="WALKING">Walking</option>
-                <option value="TRANSIT">Transit</option>
-              </select>
+        {/* Market Trends */}
+        <Section title="Market Trends" icon={icons.trends}>
+          <div style={{ marginBottom: '15px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#e0e0e0', fontSize: '14px' }}>
+              <input
+                type="checkbox"
+                checked={showMarketTrends}
+                onChange={e => setShowMarketTrends(e.target.checked)}
+                style={{ accentColor: '#00aaff' }}
+              />
+              Show Price Appreciation Areas
+            </label>
+          </div>
+          
+          <div style={{ background: '#1f2328', padding: '12px', borderRadius: '6px' }}>
+            <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '14px' }}>Area Performance (YoY)</h4>
+            {marketTrends.map(area => (
+              <div key={area.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ color: '#e0e0e0', fontSize: '13px' }}>{area.name}</span>
+                <span style={{ 
+                  color: area.appreciation > 5 ? '#4CAF50' : '#F44336', 
+                  fontWeight: 'bold', 
+                  fontSize: '13px' 
+                }}>
+                  {area.appreciation > 0 ? '+' : ''}{area.appreciation}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </Section>
+
+        {/* Data Layers */}
+        <Section title="Data Layers" icon={icons.layers}>
+          {Object.keys(visibleLayers).map(cat => (
+            <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+              <input
+                id={`layer-${cat}`}
+                type="checkbox"
+                checked={visibleLayers[cat]}
+                onChange={() => setVisibleLayers(prev => ({ ...prev, [cat]: !prev[cat] }))}
+                style={{ accentColor: '#00aaff' }}
+              />
+              <label htmlFor={`layer-${cat}`} style={{ color: '#e0e0e0', fontWeight: '500', fontSize: '14px' }}>
+                {cat}
+              </label>
             </div>
-            
-            {distanceInfo && (
-              <p style={{ fontWeight: 'bold', background: '#1f2328', color: '#00aaff', padding: '8px', borderRadius: '6px', fontSize: '14px', margin: '0 0 10px 0' }}>
-                {distanceInfo}
-              </p>
-            )}
-            
-            <div>
-              <h4 style={{ fontSize: '14px', color: '#fff', margin: '0 0 10px 0' }}>
-                Nearby {placeType}s ({nearbyPlaces.length} found)
-              </h4>
-              {nearbyPlaces.length > 0 ? (
-                <div style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '5px' }}>
-                  {nearbyPlaces.map(place => (
-                    <div key={place.place_id} style={{ background: '#1f2328', padding: '10px', borderRadius: '6px', marginBottom: '8px', border: '1px solid #333' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '5px' }}>
-                        <strong style={{ color: '#fff', fontSize: '14px', flex: 1, marginRight: '10px' }}>
-                          {place.name}
-                        </strong>
-                        {place.rating && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <span style={{ color: '#FFD700', fontSize: '12px' }}>★</span>
-                            <span style={{ color: '#00aaff', fontSize: '12px', fontWeight: 'bold' }}>
-                              {place.rating.toFixed(1)}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '8px' }}>
-                        📍 {place.vicinity}
-                      </div>
-                      
-                      {place.types && (
-                        <div style={{ marginBottom: '8px' }}>
-                          <span style={{ 
-                            background: '#404652', 
-                            color: '#e0e0e0', 
-                            padding: '2px 6px', 
-                            borderRadius: '3px', 
-                            fontSize: '10px',
-                            textTransform: 'capitalize'
-                          }}>
-                            {place.types[0].replace(/_/g, ' ')}
+          ))}
+        </Section>
+
+        {/* Nearby & Routes */}
+        <Section title="Nearby & Routes" icon={icons.routes}>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+            <select
+              value={placeType}
+              onChange={e => setPlaceType(e.target.value)}
+              className="select-field"
+            >
+              <option value="school">School</option>
+              <option value="restaurant">Restaurant</option>
+              <option value="hospital">Hospital</option>
+              <option value="park">Park</option>
+            </select>
+            <select
+              value={travelMode}
+              onChange={e => setTravelMode(e.target.value)}
+              className="select-field"
+            >
+              <option value="DRIVING">Driving</option>
+              <option value="WALKING">Walking</option>
+              <option value="TRANSIT">Transit</option>
+            </select>
+          </div>
+          
+          {distanceInfo && (
+            <p style={{ fontWeight: 'bold', background: '#1f2328', color: '#00aaff', padding: '8px', borderRadius: '6px', fontSize: '14px', margin: '0 0 10px 0' }}>
+              {distanceInfo}
+            </p>
+          )}
+          
+          <div>
+            <h4 style={{ fontSize: '14px', color: '#fff', margin: '0 0 10px 0' }}>
+              Nearby {placeType}s ({nearbyPlaces.length} found)
+            </h4>
+            {nearbyPlaces.length > 0 ? (
+              <div style={{ maxHeight: '200px', overflowY: 'auto', paddingRight: '5px' }}>
+                {nearbyPlaces.map(place => (
+                  <div key={place.place_id} style={{ background: '#1f2328', padding: '10px', borderRadius: '6px', marginBottom: '8px', border: '1px solid #333' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '5px' }}>
+                      <strong style={{ color: '#fff', fontSize: '14px', flex: 1, marginRight: '10px' }}>
+                        {place.name}
+                      </strong>
+                      {place.rating && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                          <span style={{ color: '#FFD700', fontSize: '12px' }}>★</span>
+                          <span style={{ color: '#00aaff', fontSize: '12px', fontWeight: 'bold' }}>
+                            {place.rating.toFixed(1)}
                           </span>
                         </div>
                       )}
+                    </div>
+                    
+                    <div style={{ color: '#aaa', fontSize: '12px', marginBottom: '8px' }}>
+                      📍 {place.vicinity}
+                    </div>
+                    
+                    {place.types && (
+                      <div style={{ marginBottom: '8px' }}>
+                        <span style={{ 
+                          background: '#404652', 
+                          color: '#e0e0e0', 
+                          padding: '2px 6px', 
+                          borderRadius: '3px', 
+                          fontSize: '10px',
+                          textTransform: 'capitalize'
+                        }}>
+                          {place.types[0].replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                    )}
+                    
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button 
+                        onClick={() => getDirectionsToPlace(place)} 
+                        style={{
+                          fontSize: '12px', 
+                          padding: '5px 10px', 
+                          cursor: 'pointer', 
+                          border: '1px solid #00aaff', 
+                          background: '#00aaff', 
+                          color: '#fff', 
+                          borderRadius: '4px',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseOver={e => e.target.style.background = '#0095e0'}
+                        onMouseOut={e => e.target.style.background = '#00aaff'}
+                      >
+                        🗺️ Get Directions
+                      </button>
                       
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      {place.place_id && (
                         <button 
-                          onClick={() => getDirectionsToPlace(place)} 
+                          onClick={() => {
+                            const url = `https://www.google.com/maps/place/?q=place_id:${place.place_id}`;
+                            window.open(url, '_blank');
+                          }}
                           style={{
                             fontSize: '12px', 
                             padding: '5px 10px', 
                             cursor: 'pointer', 
-                            border: '1px solid #00aaff', 
-                            background: '#00aaff', 
+                            border: '1px solid #555', 
+                            background: '#404652', 
                             color: '#fff', 
                             borderRadius: '4px',
                             transition: 'all 0.2s'
                           }}
-                          onMouseOver={e => e.target.style.background = '#0095e0'}
-                          onMouseOut={e => e.target.style.background = '#00aaff'}
+                          onMouseOver={e => e.target.style.background = '#505866'}
+                          onMouseOut={e => e.target.style.background = '#404652'}
                         >
-                          🗺️ Get Directions
+                          🔗 View Details
                         </button>
-                        
-                        {place.place_id && (
-                          <button 
-                            onClick={() => {
-                              const url = `https://www.google.com/maps/place/?q=place_id:${place.place_id}`;
-                              window.open(url, '_blank');
-                            }}
-                            style={{
-                              fontSize: '12px', 
-                              padding: '5px 10px', 
-                              cursor: 'pointer', 
-                              border: '1px solid #555', 
-                              background: '#404652', 
-                              color: '#fff', 
-                              borderRadius: '4px',
-                              transition: 'all 0.2s'
-                            }}
-                            onMouseOver={e => e.target.style.background = '#505866'}
-                            onMouseOut={e => e.target.style.background = '#404652'}
-                          >
-                            🔗 View Details
-                          </button>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="no-search-message">
-                  <div className="icon">🔍</div>
-                  <h3>No {placeType}s found</h3>
-                  <p>Try selecting a different place type or search in a different area.</p>
-                </div>
-              )}
-            </div>
-          </Section>
-        ) : (
-          <div className="no-search-message">
-            <div className="icon">🗺️</div>
-            <h3>Nearby Places & Routes</h3>
-            <p>Search for a location to discover nearby amenities and get directions to places of interest.</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ 
+                background: '#1f2328', 
+                padding: '15px', 
+                borderRadius: '6px', 
+                textAlign: 'center',
+                border: '1px dashed #444'
+              }}>
+                <p style={{ fontSize: '14px', color: '#888', margin: 0 }}>
+                  🔍 Search a location to find nearby {placeType}s
+                </p>
+              </div>
+            )}
           </div>
-        )}
+        </Section>
       </div>
 
       {/* Google Map */}
@@ -1873,14 +1851,14 @@ export default function GeoHomePro() {
             streetViewControlOptions: { position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM }
           }}
         >
-          {/* Main Search Marker - Always show */}
+          {/* Main Search Marker */}
           <Marker 
             position={markerPosition} 
             icon={{ url: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png" }} 
           />
 
-          {/* Market Trend Overlays - Only show if location searched and option enabled */}
-          {searchLocation && showMarketTrends && marketTrends.map(area => (
+          {/* Market Trend Overlays */}
+          {showMarketTrends && marketTrends.map(area => (
             <Polygon
               key={area.name}
               paths={area.bounds}
@@ -1897,8 +1875,8 @@ export default function GeoHomePro() {
             />
           ))}
 
-          {/* Filtered Property Markers - Only show if location searched */}
-          {searchLocation && filteredProperties.map(property => (
+          {/* Filtered Property Markers */}
+          {filteredProperties.map(property => (
             <Marker
               key={property.id}
               position={{ lat: property.lat, lng: property.lng }}
@@ -2107,8 +2085,8 @@ export default function GeoHomePro() {
             </InfoWindow>
           )}
 
-          {/* Additional overlays - Only show if location searched */}
-          {searchLocation && directions && (
+          {/* Additional overlays */}
+          {directions && (
             <DirectionsRenderer 
               directions={directions} 
               options={{ 
@@ -2120,7 +2098,7 @@ export default function GeoHomePro() {
             />
           )}
           
-          {searchLocation && heatmapData.length > 0 && <HeatmapLayer data={heatmapData} />}
+          {heatmapData.length > 0 && <HeatmapLayer data={heatmapData} />}
           
           <DrawingManager
             options={{
@@ -2141,41 +2119,6 @@ export default function GeoHomePro() {
             }}
           />
         </GoogleMap>
-
-        {/* Map overlay message when no location is searched */}
-        {!searchLocation && (
-          <div style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            background: 'rgba(44, 48, 56, 0.95)',
-            color: 'white',
-            padding: '30px',
-            borderRadius: '12px',
-            textAlign: 'center',
-            maxWidth: '400px',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: '0 10px 30px rgba(0, 0, 0, 0.3)'
-          }}>
-            <div style={{ fontSize: '48px', marginBottom: '20px' }}>🏠</div>
-            <h2 style={{ margin: '0 0 15px 0', color: '#fff' }}>Welcome to GeoHome Pro</h2>
-            <p style={{ margin: '0 0 20px 0', color: '#aaa', lineHeight: '1.5' }}>
-              Search for a location using the sidebar to discover properties, analyze market trends, and explore investment opportunities in that area.
-            </p>
-            <div style={{ 
-              background: '#00aaff', 
-              color: 'white', 
-              padding: '8px 16px', 
-              borderRadius: '20px', 
-              fontSize: '14px',
-              display: 'inline-block'
-            }}>
-              💡 Try searching for "Kuala Lumpur" or "KLCC"
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
